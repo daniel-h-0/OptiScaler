@@ -118,7 +118,7 @@ class Dx11WithDx12
         UINT64 frameId = 0;
     };
 
-    inline static D3D11_UPSCALER_RESOURCE_CACHE_C UpscalerResourceCache = {};
+    static D3D11_UPSCALER_RESOURCE_CACHE_C UpscalerResourceCache;
     inline static UINT UpscalerFrameIndex = 0;
     inline static UINT64 UpscalerLocalFrameId = 0;
     inline static UINT64 LastPreparedUpscalerFrameId = 0;
@@ -187,3 +187,5 @@ inline Dx11WithDx12::ResourceMask& operator|=(Dx11WithDx12::ResourceMask& a, Dx1
     a = a | b;
     return a;
 }
+
+inline Dx11WithDx12::D3D11_UPSCALER_RESOURCE_CACHE_C Dx11WithDx12::UpscalerResourceCache {};

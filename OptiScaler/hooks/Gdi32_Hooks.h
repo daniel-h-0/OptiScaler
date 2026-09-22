@@ -13,7 +13,8 @@ typedef decltype(&D3DKMTCloseAdapter) PFN_D3DKMTCloseAdapter;
 
 inline static PFN_D3DKMTQueryAdapterInfo o_D3DKMTQueryAdapterInfo = nullptr;
 
-VALIDATE_HOOK(hkD3DKMTQueryAdapterInfo, PFN_D3DKMTQueryAdapterInfo)
+static std::remove_pointer_t<PFN_D3DKMTQueryAdapterInfo> hkD3DKMTQueryAdapterInfo;
+VALIDATE_MEMBER_HOOK(hkD3DKMTQueryAdapterInfo, PFN_D3DKMTQueryAdapterInfo)
 static NTSTATUS hkD3DKMTQueryAdapterInfo(const D3DKMT_QUERYADAPTERINFO* data)
 {
     auto result = o_D3DKMTQueryAdapterInfo(data);

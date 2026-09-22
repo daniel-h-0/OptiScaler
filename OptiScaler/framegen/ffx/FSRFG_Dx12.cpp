@@ -1061,7 +1061,7 @@ void FSRFG_Dx12::DestroyFGContext()
 {
     _frameCount = 1;
     // _lastDispatchedFrame = 0;
-    _version = {};
+    _version = feature_version {};
 
     LOG_DEBUG("");
 

@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "menu_common.h"
+#include "bc250_fg_controls.h"
 
 #include "input/input_system.h"
 
@@ -3126,6 +3127,7 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
 
 void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
 {
+    RenderBC250FrameControls();
     auto& state = ctx.state;
     auto config = ctx.config;
     auto& menuResScale = ctx.menuResScale;

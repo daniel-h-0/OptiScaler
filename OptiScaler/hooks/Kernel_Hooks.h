@@ -67,7 +67,7 @@ class KernelHooks
     static inline std::mutex hookMutexBase;
 
   public:
-    static constexpr HMODULE amdxc64Mark = HMODULE(0xFFFFFFFF13372137);
+    static inline HMODULE const amdxc64Mark = HMODULE(0xFFFFFFFF13372137);
 
     static void Hook()
     {
