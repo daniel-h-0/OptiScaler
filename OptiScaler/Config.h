@@ -687,6 +687,12 @@ class Config
     bool SaveIni();
     bool SaveXeFG();
 
+    // Auto-save support: treat the current settings as saved, then write only after they change.
+    // SaveIniIfChanged returns true only when it wrote the file.
+    void MarkIniSaved();
+    bool SaveIniIfChanged();
+    bool IniSaveFailed() const { return _iniSaveFailed; }
+
     void CheckUpscalerFiles();
 
     std::vector<std::string> GetConfigLog();
@@ -700,7 +706,12 @@ class Config
     std::filesystem::path absoluteFileName;
     std::wstring fileName = L"OptiScaler.ini";
 
+    std::string _savedIni; // Last written (or attempted) settings, or the auto-save baseline
+    bool _iniSaveFailed = false;
+
     bool Reload(std::filesystem::path iniPath);
+    std::string SerializeIni();
+    bool WriteIni(std::string data);
 
     std::optional<std::string> readString(std::string section, std::string key, bool lowercase = false);
     std::optional<std::wstring> readWString(std::string section, std::string key, bool lowercase = false);

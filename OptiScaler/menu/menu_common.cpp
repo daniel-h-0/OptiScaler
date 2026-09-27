@@ -2839,8 +2839,7 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
                             config->Fsr4EnableWatermark = fsr4wm;
                         }
 
-                        ShowHelpMarker("After changing this option, please Save Settings.\n"
-                                       "It will be applied on next launch.");
+                        ShowHelpMarker("It will be applied on next launch.");
                     }
                 }
 
@@ -3394,8 +3393,7 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
         if (state.fgSettingsChanged)
         {
             ImGui::Spacing();
-            ImGui::TextColored(toneMapColor(ImVec4(1.f, 0.f, 0.0f, 1.f)),
-                               "Save Settings and restart to apply the changes");
+            ImGui::TextColored(toneMapColor(ImVec4(1.f, 0.f, 0.0f, 1.f)), "Restart the game to apply the changes");
             ImGui::Spacing();
         }
 
@@ -3806,8 +3804,7 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                     config->FSRFGEnableWatermark = fgwm;
                 }
 
-                ShowHelpMarker("After changing this option, please Save Settings\n"
-                               "It will be applied on next launch.");
+                ShowHelpMarker("It will be applied on next launch.");
             }
 
             ImGui::Spacing();
@@ -4948,8 +4945,7 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                         config->FSRFGEnableWatermark = fgwm;
                     }
 
-                    ShowHelpMarker("After changing this option, please Save Settings\n"
-                                   "It will be applied on next launch.");
+                    ShowHelpMarker("It will be applied on next launch.");
                 }
             }
 
@@ -5300,7 +5296,7 @@ void MenuCommon::RenderFakenvapiSettings(RenderMenuContext& ctx)
     if (activeForceXeLL != forceXell)
     {
         ImGui::Spacing();
-        ImGui::TextColored(toneMapColor(ImVec4(1.f, 0.f, 0.0f, 1.f)), "Save INI and restart to apply the changes");
+        ImGui::TextColored(toneMapColor(ImVec4(1.f, 0.f, 0.0f, 1.f)), "Restart the game to apply the changes");
         ImGui::Spacing();
     }
 
@@ -7381,6 +7377,18 @@ void MenuCommon::RenderMainMenuBottomBar(RenderMenuContext& ctx)
         io.WantCaptureMouse = false;
     }
 
+    ImGui::SameLine(0.0f, 12.0f);
+
+    if (config->IniSaveFailed())
+    {
+        ImGui::TextColored(toneMapColor(ImVec4(1.f, 0.f, 0.0f, 1.f)), "Settings not saved");
+        ShowTooltip("OptiScaler.ini could not be written, see the log.\nPress Save Settings to retry.");
+    }
+    else
+    {
+        ImGui::TextDisabled("Changes save automatically");
+    }
+
     auto winSize = ImGui::GetWindowSize();
     auto winPos = ImGui::GetWindowPos();
 
@@ -7778,6 +7786,43 @@ void MenuCommon::RenderMainMenuWindow(RenderMenuContext& ctx)
         ImGui::PopFontSize();
 }
 
+// Saves menu changes without the "Save Settings" button. Opening the menu only records the current settings.
+// After the user has operated a menu control, the settings are compared at most every 500 ms and once when
+// the menu closes, and OptiScaler.ini is written only when they differ from the last saved state.
+void MenuCommon::AutoSaveSettings(RenderMenuContext& ctx)
+{
+    constexpr double AutoSaveIntervalMs = 500.0;
+
+    if (_isVisible)
+    {
+        if (!_autoSaveActive)
+        {
+            ctx.config->MarkIniSaved();
+            _autoSaveActive = true;
+            _autoSaveInteracted = false;
+            _autoSaveLastCheck = ctx.now;
+            return;
+        }
+
+        _autoSaveInteracted |= ImGui::IsAnyItemActive();
+
+        if (_autoSaveInteracted && ctx.now - _autoSaveLastCheck >= AutoSaveIntervalMs)
+        {
+            _autoSaveLastCheck = ctx.now;
+
+            if (ctx.config->SaveIniIfChanged())
+                LOG_DEBUG("Menu changes saved");
+        }
+    }
+    else if (_autoSaveActive)
+    {
+        _autoSaveActive = false;
+
+        if (_autoSaveInteracted && ctx.config->SaveIniIfChanged())
+            LOG_DEBUG("Menu changes saved on close");
+    }
+}
+
 void KeyUp(UINT vKey)
 {
     inputMenu = vKey == Config::Instance()->ShortcutKey.value_or_default();
@@ -7814,6 +7859,7 @@ bool MenuCommon::RenderMenu()
 
     // 4) Draw the full settings menu last so popups and child windows keep their existing behavior.
     RenderMainMenuWindow(ctx);
+    AutoSaveSettings(ctx);
 
     if (ctx.newFrame)
         ImGui::EndFrame();
