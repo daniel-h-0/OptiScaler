@@ -10,6 +10,7 @@
 #include <framegen/nvngx/Nvngx_FG.h>
 #include <framegen/xefg/XeFG_Dx12.h>
 #include <proxies/KernelBase_Proxy.h>
+#include <proxies/Ntdll_Proxy.h>
 #include <imgui/ImGuiNotify.hpp>
 
 #include <json.hpp>
@@ -2249,6 +2250,40 @@ const char* StreamlineHooks::pluginName(SlPlugin plugin)
     }
 }
 
+StreamlineHooks::PluginLock::PluginLock(std::mutex& mutex, bool tryOnly) : _mutex(mutex)
+{
+    _loaderLocked = NtdllProxy::LockLoaderLock(tryOnly, _cookie);
+
+    // Loader lock busy: give up without touching the plugin mutex
+    if (tryOnly && !_loaderLocked && NtdllProxy::HasLoaderLock())
+        return;
+
+    if (tryOnly)
+    {
+        _owns = _mutex.try_lock();
+    }
+    else
+    {
+        _mutex.lock();
+        _owns = true;
+    }
+
+    if (!_owns && _loaderLocked)
+    {
+        NtdllProxy::UnlockLoaderLock(_cookie);
+        _loaderLocked = false;
+    }
+}
+
+StreamlineHooks::PluginLock::~PluginLock()
+{
+    if (_owns)
+        _mutex.unlock();
+
+    if (_loaderLocked)
+        NtdllProxy::UnlockLoaderLock(_cookie);
+}
+
 std::mutex& StreamlineHooks::pluginMutex(SlPlugin plugin)
 {
     switch (plugin)
@@ -2606,9 +2641,9 @@ void StreamlineHooks::onModuleFreed(PVOID module)
         if (!ours)
             continue;
 
-        // try_lock: never block here, FreeLibrary can be called from places we don't control.
-        // If it's busy, the hook call holding it will release dead slots itself.
-        std::unique_lock lock(pluginMutex(plugin), std::try_to_lock);
+        // Try only: never block here, FreeLibrary can be called from places we don't control.
+        // If it's busy, the next hook call will release dead slots itself.
+        PluginLock lock(pluginMutex(plugin), true);
         if (!lock.owns_lock())
             continue;
 

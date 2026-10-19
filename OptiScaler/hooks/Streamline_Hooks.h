@@ -150,7 +150,31 @@ class StreamlineHooks
     // Streamline can load a newer copy, reject it (e.g. OTA denylist) and keep using the older one,
     // so hooking a new copy must never remove the hook from a copy that is still loaded.
     // A slot is released only after the loader really unmapped its module (see onModuleFreed).
-    // Callers of hook*/unhook* must hold the matching mutexHook* (same as before).
+    // Callers of hook*/unhook* must hold the matching mutexHook* through a PluginLock.
+
+    // Locks one plugin's hook slots: the loader lock first, then the plugin mutex, on every path.
+    // Hooking calls GetProcAddress and GetModuleFileNameW, which take the loader lock, and other DLL loads reach
+    // LibraryLoadHooks::CheckModulesInMemory while their thread already holds it. A plugin mutex taken without
+    // the loader lock would be a lock-order inversion: one thread holding the plugin mutex and waiting for the
+    // loader lock, another holding the loader lock and waiting for the plugin mutex.
+    // Never hold a PluginLock across a library load.
+    class PluginLock
+    {
+      public:
+        explicit PluginLock(std::mutex& mutex, bool tryOnly = false);
+        ~PluginLock();
+
+        PluginLock(const PluginLock&) = delete;
+        PluginLock& operator=(const PluginLock&) = delete;
+
+        bool owns_lock() const { return _owns; }
+
+      private:
+        std::mutex& _mutex;
+        ULONG_PTR _cookie = 0;
+        bool _loaderLocked = false;
+        bool _owns = false;
+    };
 
     static void unhookDlss();
     static void hookDlss(HMODULE slDlss);
