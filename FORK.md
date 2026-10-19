@@ -1,29 +1,30 @@
 # BC-250 fork of OptiScaler
 
 This branch is [OptiScaler](https://github.com/optiscaler/OptiScaler) at its nightly of 29 September 2026 (upstream
-commit `92337ebfbf07d533eabe3731fd8de1bb19437aea`) with four commits for [PRODUCT], a frame-generation accelerator for
-the AMD BC-250 under Proton. [PRODUCT]'s packages ship an `OptiScaler.dll` built from commit `a7932870` of this branch:
+commit `92337ebfbf07d533eabe3731fd8de1bb19437aea`) with four commits for FreeFG, a frame-generation accelerator for
+the AMD BC-250 under Proton. FreeFG's packages ship an `OptiScaler.dll` built from commit `a7932870` of this branch:
 
 | | |
 | --- | --- |
-| File | `OptiScaler.dll` (`opti/OptiScaler.dll` in [PRODUCT]'s packages), 27,790,848 bytes |
+| File | `OptiScaler.dll` (`opti/OptiScaler.dll` in FreeFG's packages), 27,790,848 bytes |
 | sha256 | `244eca5c0927dff802d7f2a506afe9e7776bcdc489bdc3acdf56e9c92f7b437d` |
 | Version string | `OptiScaler v10.0.0-dev (a7932870f998-bc250-e3b0c442) (BC250 private)` |
 | Source | commit `a7932870f9988b86692aabf9e8908e2adc61e1f0` (tree `74d774430e56919ab2246476004ed43b731d259f`) and the nine submodules at the commits it records |
-| Tag | `bc250-a793287`, on the commit after `a7932870` that adds this file and `tools/bc250-build.py`: the build commit plus its documentation and build script |
+| Tag | `bc250-a793287`, on a commit after `a7932870` that adds only this file and `tools/bc250-build.py`: the build commit plus its documentation and build script |
 | Built | 18 October 2026 on Linux with clang-cl and lld-link, by `tools/bc250-build.py` |
 
 The version string's last field is fixed text that the build script writes in place of a build date, so that
 rebuilding gives the same bytes. It does not mean that the source is private.
 
 This is not an official OptiScaler or OptiScaler Client release, and the OptiScaler project does not support it.
-Report problems with this build to [PRODUCT] ([REPO-URL]), not to OptiScaler.
+Report problems with this build to FreeFG (https://github.com/daniel-h-0/freefg), not to OptiScaler.
 
 ## Licence
 
 OptiScaler is licensed under the GNU General Public License version 3 (`LICENSE`, unchanged from upstream). This fork,
 including the changes below, is distributed under the same licence. The changes were made between 22 and 29 September
-2026 (each commit carries its date); this file and `tools/bc250-build.py` were added on 18 October 2026.
+2026 (each commit carries its date); this file and `tools/bc250-build.py` were added on 18 October 2026, and this file
+was updated on 19 October 2026.
 
 Three files of this fork carry an MIT licence header: `OptiScaler/menu/bc250_fg_contract.h`,
 `OptiScaler/menu/bc250_fg_controls.h` and `tools/bc250-build.py`. MIT is compatible with the GPL, and they are
@@ -33,12 +34,12 @@ There is no warranty, to the extent permitted by applicable law (GPL-3.0 section
 
 ## The four commits
 
-| Commit | What it changes | Needed by [PRODUCT]'s 2× build |
+| Commit | What it changes | Needed by FreeFG's 2× build |
 | --- | --- | --- |
 | `a7932870` Revert "Try to prevent race conditions when hooking sl plugins" | Reverts upstream `f6db41df` (26 September 2026). `OptiScaler/hooks/LibraryLoad_Hooks.cpp` returns, byte for byte, to its content before that commit; `OptiScaler/hooks/Streamline_Hooks.h` loses only the six plugin mutex declarations. | **Yes, essential** (see below). |
 | `e135c714` Save menu changes automatically | Once the user operates a menu control, the overlay menu saves `OptiScaler.ini` the way Save Settings does: at most every 500 ms and when the menu closes, and only when the serialized settings differ from the last saved ones. Values changed by runtime code while nobody touches the menu are not written. Save Settings still writes unconditionally; a failed write is logged, shown in the menu footer and retried after the next change. | No. A convenience: without it, menu changes last only until the game exits unless the user presses Save Settings. |
-| `3c232628` Initialize optional FFX downscaled color resources before cleanup | `OptiScaler/upscalers/ffx/FFXFeature_Dx12.h`: `ID3D12Resource* smallerColor[2] = {};`. The cleanup releases both pointers, also when the optional resources were never created. | A bug fix, not specific to [PRODUCT]. Upstream made the same change in `73deae91` (17 October 2026). |
-| `e1efe7ab` Add private XeFG scaling controls and local Clang portability fixes | (a) A menu section, "XeFG scaling", in `OptiScaler/menu/bc250_fg_contract.h`, `bc250_fg_controls.h` and two lines of `menu_common.cpp`. It talks to a module named `BC250-MFG.asi`, the multi-frame add-on of earlier [PRODUCT] test builds, and returns at once when that module is not loaded. (b) Five source changes so that clang-cl compiles the project, with no change in behaviour: `framegen/ffx/FSRFG_Dx12.cpp` (`_version = feature_version {}`), `hooks/Gdi32_Hooks.h` (the hook is declared before its signature check), `hooks/Kernel_Hooks.h` (`amdxc64Mark` is `static inline HMODULE const` instead of `constexpr`), `inputs/FfxApiExe_Dx12.cpp` (its five hook functions are renamed `ffx…_ExeDx12`), `with_dx12/dx11_with_dx12.h` (`UpscalerResourceCache` is defined after the class). | (a) No: the 2× build has no `BC250-MFG.asi`, so the section never draws. (b) Yes, for this build method. |
+| `3c232628` Initialize optional FFX downscaled color resources before cleanup | `OptiScaler/upscalers/ffx/FFXFeature_Dx12.h`: `ID3D12Resource* smallerColor[2] = {};`. The cleanup releases both pointers, also when the optional resources were never created. | A bug fix, not specific to FreeFG. Upstream made the same change in `73deae91` (17 October 2026). |
+| `e1efe7ab` Add private XeFG scaling controls and local Clang portability fixes | (a) A menu section, "XeFG scaling", in `OptiScaler/menu/bc250_fg_contract.h`, `bc250_fg_controls.h` and two lines of `menu_common.cpp`. It talks to a module named `BC250-MFG.asi`, the multi-frame add-on of earlier FreeFG test builds, and returns at once when that module is not loaded. (b) Five source changes so that clang-cl compiles the project, with no change in behaviour: `framegen/ffx/FSRFG_Dx12.cpp` (`_version = feature_version {}`), `hooks/Gdi32_Hooks.h` (the hook is declared before its signature check), `hooks/Kernel_Hooks.h` (`amdxc64Mark` is `static inline HMODULE const` instead of `constexpr`), `inputs/FfxApiExe_Dx12.cpp` (its five hook functions are renamed `ffx…_ExeDx12`), `with_dx12/dx11_with_dx12.h` (`UpscalerResourceCache` is defined after the class). | (a) No: the 2× build has no `BC250-MFG.asi`, so the section never draws. (b) Yes, for this build method. |
 
 ### Why the revert
 
@@ -59,14 +60,12 @@ booted (12 with the DLL swapped in, 8 after a fresh install). An OptiScaler buil
 `f6db41df`, booted 10 of 10. Without these mutexes the race that `f6db41df` addressed can come back; it was not seen
 in these games.
 
-On 18 October 2026, after a CONTROL Resonant update, 1 of 15 starts with this build still hung at start-up with the
-same signature. That hang is not explained yet.
-
-These start-up series ran with the earlier build of the same source (next section).
+After a CONTROL Resonant update, 32 of 32 starts booted with the shipped `244eca5c` on 18 October 2026. The earlier
+series ran with the earlier build of the same source (next section).
 
 ## Earlier builds of the same source
 
-[PRODUCT]'s private test builds from 29 September to 18 October 2026 carried `OptiScaler.dll` sha256
+FreeFG's private test builds from 29 September to 18 October 2026 carried `OptiScaler.dll` sha256
 `777ed1e7745412c944a44ac284fa5e7ad95418d3faf6ed4d72c4ef339aeca98d` (27,790,848 bytes, version string
 `OptiScaler v10.0.0-dev (2c103878e906-bc250-e3b0c442) (BC250 private)`), built on 29 September 2026 from commit
 `2c103878e90656c3bb56cfdbd4926dd8beb269af`. On 18 October 2026 the four commits were recorded again under the author
@@ -125,7 +124,8 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ```
 
 - The DLL is `../optiscaler-build/OptiScaler.dll`; `bc250-build-record.json` beside it has its sha256, the source
-  commit, the version label and the tool versions.
+  commit, the version label and the tool versions. `llvm-rc` has no `--version` option, so its entry there holds
+  llvm-rc's usage message instead; it comes from the same LLVM release as `clang-cl`.
 - The output directory must be outside the checkout.
 - Instead of `MSVC_ROOT`, `MSVC_INCLUDE` and `MSVC_LIB` can name the header and library directories; `CLANG_CL`,
   `LLD_LINK`, `LLVM_RC` and `NINJA` can name the tools.
@@ -138,7 +138,7 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ## Reproducing the shipped DLL
 
 ```sh
-git clone [OPTISCALER-FORK-SOURCE-URL] optiscaler-bc250
+git clone https://github.com/daniel-h-0/OptiScaler optiscaler-bc250
 cd optiscaler-bc250
 git checkout bc250-a793287                  # this file and tools/
 cp tools/bc250-build.py ../bc250-build.py
@@ -168,7 +168,8 @@ Checked on 18 October 2026:
 
 ## Submodules
 
-Unchanged from upstream `92337ebf`. Each commit exists in its public repository (checked 18 October 2026).
+Unchanged from upstream `92337ebf`. Each commit exists in its public repository (checked 18 October 2026, and again
+on 19 October 2026 by fetching each commit from the repository below).
 
 | Path | Repository | Commit |
 | --- | --- | --- |
@@ -196,5 +197,5 @@ The build reads headers from these submodules and links static libraries that th
 - The clang changes of `e1efe7ab` are not in master in this form (master has clang fixes of its own), so a rebase has
   to check them again.
 
-A rebased build is a different binary. [PRODUCT] pins this DLL by sha256, so a rebased build needs a new tag, a new pin
+A rebased build is a different binary. FreeFG pins this DLL by sha256, so a rebased build needs a new tag, a new pin
 and its own testing.
