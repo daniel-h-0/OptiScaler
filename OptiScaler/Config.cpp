@@ -892,7 +892,7 @@ std::string GetFloatValue(std::optional<float> value)
     return std::to_string(value.value());
 }
 
-bool Config::SaveIni()
+std::string Config::SerializeIni()
 {
     // Upscalers
     {
@@ -1648,11 +1648,39 @@ bool Config::SaveIni()
         ini.Delete("Nukems", "MakeDepthCopy", true);
     }
 
+    std::string data;
+    ini.Save(data, true);
+    return data;
+}
+
+bool Config::WriteIni(std::string data)
+{
     auto pathWStr = absoluteFileName.wstring();
 
     LOG_INFO("Trying to save ini to: {0}", wstring_to_string(pathWStr));
 
-    return ini.SaveFile(absoluteFileName.wstring().c_str()) >= 0;
+    // Remember failed writes too, so auto-save only retries after another change
+    _savedIni = std::move(data);
+    _iniSaveFailed = ini.SaveFile(pathWStr.c_str()) < 0;
+
+    if (_iniSaveFailed)
+        LOG_ERROR("Can't save ini to: {0}", wstring_to_string(pathWStr));
+
+    return !_iniSaveFailed;
+}
+
+bool Config::SaveIni() { return WriteIni(SerializeIni()); }
+
+void Config::MarkIniSaved() { _savedIni = SerializeIni(); }
+
+bool Config::SaveIniIfChanged()
+{
+    auto data = SerializeIni();
+
+    if (data == _savedIni)
+        return false;
+
+    return WriteIni(std::move(data));
 }
 
 bool Config::SaveXeFG()

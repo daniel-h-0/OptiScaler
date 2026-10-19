@@ -154,6 +154,11 @@ class MenuCommon
     // ui scale
     inline static int _selectedScale = 0;
 
+    // settings auto-save
+    inline static bool _autoSaveActive = false;
+    inline static bool _autoSaveInteracted = false;
+    inline static double _autoSaveLastCheck = 0.0;
+
     // overlay states
     inline static bool _dx11Ready = false;
     inline static bool _dx12Ready = false;
@@ -204,6 +209,7 @@ class MenuCommon
     static void UpdateFrameTimeAverages(RenderMenuContext& ctx);
     static void RenderPerformanceOverlay(RenderMenuContext& ctx);
     static void RenderMainMenuWindow(RenderMenuContext& ctx);
+    static void AutoSaveSettings(RenderMenuContext& ctx);
 
     // RenderMainMenuWindow section helpers. These keep the main window flow readable
     // without changing the existing ImGui layout, labels, or setting side effects.
