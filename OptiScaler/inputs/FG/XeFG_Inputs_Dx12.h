@@ -14,7 +14,7 @@ class XeFGInputs
     {
         const char* name;
         PVOID function;
-        PVOID target = nullptr;
+        PVOID target; // nullptr: aggregate initialization value-initializes it
     };
 
     // XeFG output: the game's own XeFG and XeLL run on OptiScaler's libraries, as they would without OptiScaler.
