@@ -1,21 +1,28 @@
-# BC-250 fork of OptiScaler (rebase on master of 19 October 2026)
+# BC-250 fork of OptiScaler
 
-This branch is [OptiScaler](https://github.com/optiscaler/OptiScaler) master as of 19 October 2026 (upstream commit
-`c2e44a8bc911010d7ed3e4fa63843185fbb55d03`, 13:19 UTC): the nightly of 19 October (`1db5042a`) plus Dynamic MFG for the
-XeFG output (pull request #1220: `b7536f77`, `071bb0a6`, `b35346e9`) and `c2e44a8b`. No published nightly is built from
-it yet; the first nightly with these commits is due on 20 October 2026. It carries three commits for
-[FreeFG](https://github.com/daniel-h-0/freefg), a frame-generation accelerator for the AMD BC-250 under Proton.
-FreeFG's packages ship an `OptiScaler.dll` built from commit `f971ed14` of this branch, from FreeFG 1.0.0 on. It
-replaces the build of 29 September 2026 (`244eca5c…`, tag `bc250-a793287`).
+This is OptiScaler master of 19 October 2026 (`c2e44a8b`) with the FreeFG changes below. The candidate for FreeFG
+1.1.3 fixes independent loading and saving of the XeSS, XeFG and XeLL library paths. FreeFG 1.0.0–1.1.2 shipped
+`5e570dff…` from `f971ed14` (tag `bc250-f971ed1`); this candidate supersedes that build.
 
 | | |
 | --- | --- |
-| File | `OptiScaler.dll` (`opti/OptiScaler.dll` in FreeFG's packages), 28,930,560 bytes |
-| sha256 | `5e570dff6299866c508b60634d0dcfc5a53975840888f2aa5e69ba31c3819da6` |
-| Version string | `OptiScaler v10.0.0-dev (f971ed143de0-bc250-e3b0c442) (BC250 private)` |
-| Source | commit `f971ed143de0bdbbbac6d526c95a20227c22e1c6` (tree `5dce4c9aa75e1a8216de75ef41e330f9daff806a`) and the nine submodules at the commits it records |
-| Tag | `bc250-f971ed1`, on a commit after `f971ed14` that adds only this file and `tools/bc250-build.py`: the build commit plus its documentation and build script |
-| Built | 19 October 2026 on Linux with clang-cl and lld-link, by `tools/bc250-build.py`, twice, with the same bytes |
+| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 28,977,664 bytes |
+| sha256 | `14b3fad55be7d99b57b7b670ee93852b75955e0b8e0d6af43a6ac2a2a7b8f708` |
+| Version string | `OptiScaler v10.0.0-dev (8d9fe7384ea6-bc250-e3b0c442) (BC250 private)` |
+| Source | commit `8d9fe7384ea6e1863e4b21a9ec9eaf73b13b1ca9` (tree `304b27b34a2b16b62f4df227865ab5482dfb0a47`) and its nine pinned submodules |
+| Tag | `bc250-8d9fe73`, the build commit plus this updated document |
+| Built | 25 October 2026, Linux, clang-cl/lld-link 23.1.3, MSVC 14.44.35207 and SDK 10.0.26100.0, `tools/bc250-build.py --jobs 8` |
+
+## Library-path configuration fix
+
+The older config reader assigned `XeFGPath` and `XeLLPath` to `XeSSLibrary`. `CustomOptional::set_from_config` keeps
+the first non-automatic value, so with automatic XeSS and explicit XeFG the FG DLL became the upscaler override.
+Save Settings then wrote that value as `XeSSPath`, with the actual XeFG/XeLL fields still automatic. The corrected
+reader assigns each key to its matching field; automatic discovery and explicit custom paths remain independent.
+
+Run `python3 tools/test-library-paths.py` after checking out `external/simpleini`. It compiles the real reader/writer
+fragments and `CustomOptional` against SimpleIni and checks all 27 missing/automatic/explicit path combinations at
+runtime and through save/reload. The old reader fails 84 assertions; the corrected reader passes all combinations.
 
 The version string's last field is fixed text that the build script writes in place of a build date, so that
 rebuilding gives the same bytes. It does not mean that the source is private.
@@ -26,11 +33,11 @@ Report problems with this build to FreeFG (https://github.com/daniel-h-0/freefg)
 ## Licence
 
 OptiScaler is licensed under the GNU General Public License version 3 (`LICENSE`, unchanged from upstream). This fork,
-including the changes below, is distributed under the same licence. `tools/bc250-build.py` carries an MIT licence
-header; MIT is compatible with the GPL, and it is distributed here as part of the GPL-3.0 work. There is no warranty,
+including the changes below, is distributed under the same licence. `tools/bc250-build.py` and `tools/test-library-paths.py` carry MIT licence
+headers; MIT is compatible with the GPL, and it is distributed here as part of the GPL-3.0 work. There is no warranty,
 to the extent permitted by applicable law (GPL-3.0 sections 15 and 16).
 
-## The three commits
+## Earlier FreeFG changes
 
 | Commit | What it changes | Needed by FreeFG |
 | --- | --- | --- |
@@ -83,9 +90,8 @@ option.
 
 You need:
 - Linux x86-64 with git, Python 3.9 or later and ninja.
-- LLVM's `clang-cl`, `lld-link` and `llvm-rc`. The reference build used LLVM 22.1.8: Arch Linux packages
-  `clang 22.1.8-1`, `lld 22.1.8-1` and `llvm 22.1.8-2` (the Arch Linux Archive snapshot of 3 September 2026 has
-  clang, lld and llvm-libs at these versions), and `ninja 1.13.2-3`.
+- LLVM's `clang-cl`, `lld-link` and `llvm-rc`: LLVM 23.1.3 for this candidate, and ninja 1.13.2. The previous
+  `f971ed14` build used LLVM 22.1.8; the candidate's build record records the current compiler.
 - The MSVC 14.44 headers and libraries, ATL and the Windows SDK 10.0.26100, installed with
   [msvc-wine](https://github.com/mstorsjo/msvc-wine). Downloading them means accepting Microsoft's licence terms.
   The reference installation: msvc-wine commit `514f8ea34842cd6d831804d0e9658d3a32870ae1`, the Visual Studio
@@ -132,18 +138,17 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ```sh
 git clone https://github.com/daniel-h-0/OptiScaler optiscaler-bc250
 cd optiscaler-bc250
-git checkout bc250-f971ed1                  # this file and tools/
+git checkout bc250-8d9fe73                  # this file and tools/
 cp tools/bc250-build.py ../bc250-build.py
-git checkout --detach f971ed143de0bdbbbac6d526c95a20227c22e1c6
+git checkout --detach 8d9fe7384ea6e1863e4b21a9ec9eaf73b13b1ca9
 git submodule update --init
 git status --porcelain                      # must print nothing
-MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-5e570dff --jobs 4 \
-  --expect-sha256 5e570dff6299866c508b60634d0dcfc5a53975840888f2aa5e69ba31c3819da6
+MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-14b3fad5 --jobs 8 \
+  --expect-sha256 14b3fad55be7d99b57b7b670ee93852b75955e0b8e0d6af43a6ac2a2a7b8f708
 ```
 
-Checked on 19 October 2026: these steps built `5e570dff…` twice, into two directories, with the same bytes (LLVM
-22.1.8, msvc-wine 514f8ea3 with MSVC 14.44.35207 and SDK 10.0.26100.0, the reference installation above). The DLL
-holds no file system path of the machine it was built on (string scan).
+The candidate was built on 25 October 2026 with LLVM 23.1.3, msvc-wine 514f8ea3, MSVC 14.44.35207 and SDK
+10.0.26100.0. The build record identifies the compiler, source commit, empty source patch and resulting DLL hash.
 
 ## Submodules
 
