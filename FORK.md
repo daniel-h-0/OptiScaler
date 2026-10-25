@@ -1,17 +1,35 @@
 # BC-250 fork of OptiScaler
 
 This is OptiScaler master of 19 October 2026 (`c2e44a8b`) with the FreeFG changes below. The candidate for FreeFG
-1.1.3 fixes independent loading and saving of the XeSS, XeFG and XeLL library paths. FreeFG 1.0.0–1.1.2 shipped
+1.1.3 fixes independent loading and saving of the XeSS, XeFG and XeLL library paths and restores adaptive
+frame-start pacing for FreeFG at 3×/4× through XeLL. FreeFG 1.0.0–1.1.2 shipped
 `5e570dff…` from `f971ed14` (tag `bc250-f971ed1`); this candidate supersedes that build.
 
 | | |
 | --- | --- |
-| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 28,977,664 bytes |
-| sha256 | `14b3fad55be7d99b57b7b670ee93852b75955e0b8e0d6af43a6ac2a2a7b8f708` |
-| Version string | `OptiScaler v10.0.0-dev (8d9fe7384ea6-bc250-e3b0c442) (BC250 private)` |
-| Source | commit `8d9fe7384ea6e1863e4b21a9ec9eaf73b13b1ca9` (tree `304b27b34a2b16b62f4df227865ab5482dfb0a47`) and its nine pinned submodules |
-| Tag | `bc250-8d9fe73`, the build commit plus this updated document |
+| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 28,986,880 bytes |
+| sha256 | `f59eda9e5cd1f8f131b61044eaaa021f05c8595079a9ecdfb7a90b9685a49cf5` |
+| Version string | `OptiScaler v10.0.0-dev (95142af2a0b9-bc250-e3b0c442) (BC250 private)` |
+| Source | commit `95142af2a0b9669214caded263fb6e5feaf71b92` (tree `c5ff2c88ae27cab2969c6365f69f894595849221`) and its nine pinned submodules |
+| Tag | `bc250-95142af`, the build commit plus this updated document |
 | Built | 25 October 2026, Linux, clang-cl/lld-link 23.1.3, MSVC 14.44.35207 and SDK 10.0.26100.0, `tools/bc250-build.py --jobs 8` |
+
+## Adaptive FreeFG frame starts
+
+When XeLL does not hold the game back at 3×/4×, simulation starts can alternate short and long even though the
+presentation layer displays frames evenly. This fork calls FreeFG's earlier MIT controller after its own XeLL sleep,
+without adding hooks to Intel's runtime. It acts only with the FreeFG proxy loaded and an active 3×/4× XeFG output;
+2× and marker-only XeLL contexts do not use it. The existing Present update publishes the actual multiplier to the
+per-context controller, so the sleeping thread does not access a changing frame-generation feature.
+
+The controller detects 16 alternating start intervals, tops up clearly early starts, and resets after loading gaps,
+multiplier changes or eight consecutive holds. The last rule prevents a burst of stalls from making the controller
+follow its own delay. It no longer treats a variable Present wait as proof that the GPU needs the old period: another
+output scheduler can cause that wait. `BC250_XELL_PACE=0` disables this correction for comparison.
+
+`tests/test_xell_pace.c` checks the CPU pipeline model, throughput, an already-working XeLL, noisy work, load changes,
+hitches and stall-burst recovery. Run it with `cc -O1 -g -fsanitize=address,undefined tests/test_xell_pace.c -lm -o /tmp/test-xell-pace`
+and then `/tmp/test-xell-pace`. FreeFG's MEASUREMENTS records the live TV checks and their limits.
 
 ## Library-path configuration fix
 
@@ -33,7 +51,7 @@ Report problems with this build to FreeFG (https://github.com/daniel-h-0/freefg)
 ## Licence
 
 OptiScaler is licensed under the GNU General Public License version 3 (`LICENSE`, unchanged from upstream). This fork,
-including the changes below, is distributed under the same licence. `tools/bc250-build.py` and `tools/test-library-paths.py` carry MIT licence
+including the changes below, is distributed under the same licence. `tools/bc250-build.py`, `tools/test-library-paths.py`, the FreeFG pacing controller and its tests carry MIT licence
 headers; MIT is compatible with the GPL, and it is distributed here as part of the GPL-3.0 work. There is no warranty,
 to the extent permitted by applicable law (GPL-3.0 sections 15 and 16).
 
@@ -138,13 +156,13 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ```sh
 git clone https://github.com/daniel-h-0/OptiScaler optiscaler-bc250
 cd optiscaler-bc250
-git checkout bc250-8d9fe73                  # this file and tools/
+git checkout bc250-95142af                  # this file and tools/
 cp tools/bc250-build.py ../bc250-build.py
-git checkout --detach 8d9fe7384ea6e1863e4b21a9ec9eaf73b13b1ca9
+git checkout --detach 95142af2a0b9669214caded263fb6e5feaf71b92
 git submodule update --init
 git status --porcelain                      # must print nothing
-MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-14b3fad5 --jobs 8 \
-  --expect-sha256 14b3fad55be7d99b57b7b670ee93852b75955e0b8e0d6af43a6ac2a2a7b8f708
+MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-f59eda9e --jobs 8 \
+  --expect-sha256 f59eda9e5cd1f8f131b61044eaaa021f05c8595079a9ecdfb7a90b9685a49cf5
 ```
 
 The candidate was built on 25 October 2026 with LLVM 23.1.3, msvc-wine 514f8ea3, MSVC 14.44.35207 and SDK
