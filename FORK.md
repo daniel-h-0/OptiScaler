@@ -1,22 +1,20 @@
 # BC-250 fork of OptiScaler
 
-The next FreeFG build merges upstream `539c9a1ecd2c37bee1980d0f0645919cab837855`, the source named by
-`nightly-20261025`, into the released FreeFG fork. It keeps the independent library paths, automatic INI saving
-and adaptive 3×/4× frame starts. Upstream’s non-blocking Streamline module census is combined with this fork’s
-loader-first lock order. The updated build is being qualified; the table below records the preceding 1.1.3 binary.
+This build merges upstream `539c9a1ecd2c37bee1980d0f0645919cab837855`, the source named by
+`nightly-20261025`, into the released FreeFG fork. It retains independent XeSS/XeFG/XeLL library paths,
+automatic INI saving and adaptive 3×/4× frame starts. Upstream's non-blocking Streamline module census
+uses this fork's loader-first lock order.
 
-This is OptiScaler master of 19 October 2026 (`c2e44a8b`) with the FreeFG changes below. The candidate for FreeFG
-1.1.3 fixes independent loading and saving of the XeSS, XeFG and XeLL library paths and restores adaptive
-frame-start pacing for FreeFG at 3×/4× through XeLL. FreeFG 1.0.0–1.1.2 shipped
-`5e570dff…` from `f971ed14` (tag `bc250-f971ed1`); this candidate supersedes that build.
+FreeFG 1.1.3 shipped `1e802562…` from `be42012a` (`bc250-be42012`), based on OptiScaler master of 19 October.
+FreeFG 1.0.0–1.1.2 shipped `5e570dff…` from `f971ed14` (`bc250-f971ed1`). Their tags remain available.
 
 | | |
 | --- | --- |
-| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 28,987,904 bytes |
-| sha256 | `1e8025628911495a35d40764bef69157a3d80ce0c3b67b19b2cf7e090ea1dc20` |
-| Version string | `OptiScaler v10.0.0-dev (be42012aff2d-bc250-e3b0c442) (BC250 private)` |
-| Source | commit `be42012aff2dbe26e5565d076e50f227e428cad1` (tree `46047c8460883bb40b88b1eacf036efbad73a34e`) and its nine pinned submodules |
-| Tag | `bc250-be42012`, the build commit plus this updated document |
+| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 29,129,728 bytes |
+| sha256 | `af2b4cdfdf7204f0158c97236f998f290498daf47979671f26266b6ef2498413` |
+| Version string | `OptiScaler v10.0.0-dev (7bc8f8dc1c61-bc250-e3b0c442) (BC250 private)` |
+| Source | commit `7bc8f8dc1c6179277a098383ba802b634d460ed9` (tree `532c91c325f7ba7f0104168c325ef7679e29fa68`) and its nine pinned submodules |
+| Tag | `bc250-7bc8f8d`, the build commit plus this updated document |
 | Built | 25 October 2026, Linux, clang-cl/lld-link 23.1.3, MSVC 14.44.35207 and SDK 10.0.26100.0, `tools/bc250-build.py --jobs 8` |
 
 ## Adaptive FreeFG frame starts
@@ -97,7 +95,7 @@ longer applies. This fork keeps the slots and the mutexes and fixes the lock ord
   (`GetProcAddress`, `GetModuleFileNameW`).
 - `LoadLibraryCheckW` loads the plugin first, without any lock, and hooks it afterwards under a `PluginLock`.
   `hookPlugin` skips a module that already has a slot, so two threads loading the same plugin still hook it once.
-- `CheckModulesInMemory` takes `PluginLock`s instead of plain mutex locks.
+- `CheckModulesInMemory` tries `PluginLock`s without waiting, preserving upstream's October 25 census behavior.
 - `StreamlineHooks::onModuleFreed` tries both locks and skips the round when either is busy, as its `try_lock` did.
 - Without `LdrLockLoaderLock` in ntdll, `PluginLock` falls back to the plugin mutex alone (upstream's behaviour).
 - The plugin hooks in `dllmain.cpp` (`CheckWorkingMode`, run from `DLL_PROCESS_ATTACH`, so under the loader lock)
@@ -162,13 +160,13 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ```sh
 git clone https://github.com/daniel-h-0/OptiScaler optiscaler-bc250
 cd optiscaler-bc250
-git checkout bc250-be42012                  # this file and tools/
+git checkout bc250-7bc8f8d                  # this file and tools/
 cp tools/bc250-build.py ../bc250-build.py
-git checkout --detach be42012aff2dbe26e5565d076e50f227e428cad1
+git checkout --detach 7bc8f8dc1c6179277a098383ba802b634d460ed9
 git submodule update --init
 git status --porcelain                      # must print nothing
-MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-1e802562 --jobs 8 \
-  --expect-sha256 1e8025628911495a35d40764bef69157a3d80ce0c3b67b19b2cf7e090ea1dc20
+MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-af2b4cdf --jobs 8 \
+  --expect-sha256 af2b4cdfdf7204f0158c97236f998f290498daf47979671f26266b6ef2498413
 ```
 
 The candidate was built on 25 October 2026 with LLVM 23.1.3, msvc-wine 514f8ea3, MSVC 14.44.35207 and SDK
@@ -176,8 +174,9 @@ The candidate was built on 25 October 2026 with LLVM 23.1.3, msvc-wine 514f8ea3,
 
 ## Submodules
 
-Unchanged from upstream `92337ebf` (nightly of 29 September 2026) to `c2e44a8b`. Each commit exists in its public repository (checked 18 October 2026, and again
-on 19 October 2026 by fetching each commit from the repository below).
+These are the submodules pinned by upstream `539c9a1e`. The October 25 merge updates Vulkan-Headers;
+the other eight pins are unchanged from the preceding FreeFG build. The corresponding source archive records
+the exact commits and trees and includes the redistributable source.
 
 | Path | Repository | Commit |
 | --- | --- | --- |
@@ -188,14 +187,14 @@ on 19 October 2026 by fetching each commit from the repository below).
 | `external/simpleini` | https://github.com/brofield/simpleini | `6048871ea9ee0ec24be5bd099d161a10567d7dc2` |
 | `external/spdlog` | https://github.com/gabime/spdlog | `faa0a7a9c5a3550ed5461fab7d8e31c37fd1a2ef` |
 | `external/unordered_dense` | https://github.com/martinus/unordered_dense | `73f3cbb237e84d483afafc743f1f14ec53e12314` |
-| `external/vulkan` | https://github.com/KhronosGroup/Vulkan-Headers | `d64e9e156ac818c19b722ca142230b68e3daafe3` |
+| `external/vulkan` | https://github.com/KhronosGroup/Vulkan-Headers | `8864cdc896bbc2a9b6eb36b3218fc9ef57908d77` |
 | `external/xess` | https://github.com/intel/xess | `8fe81bdbbaf00b3c1b733fd0d830c333dc84e6f0` |
 
 The build reads headers from these submodules and links static libraries that the OptiScaler tree itself carries.
 
 
-## Upstream status (19 October 2026)
+## Upstream status (25 October 2026)
 
-- `nightly-20261019` (published 09:40 UTC) is master `1db5042a`; the nightly workflow builds master as it stands at
-  its run (scheduled 04:00 UTC). This branch's base `c2e44a8b` is master at 13:19 UTC; a nightly of 20 October built
-  from a later master would carry more commits.
+`nightly-20261025` names upstream `539c9a1e` and was published at 09:02 UTC. Its support DLLs and licence files
+match the previous dependency pins; its OptiScaler DLL and default INI changed. The fork build above includes
+that source plus the FreeFG changes described here. FreeFG's measurements document records the tested game routes.
