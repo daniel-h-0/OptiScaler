@@ -39,6 +39,7 @@ std::wstring ToLower(std::wstring value);
 
 HWND GetProcessWindow();
 bool GetFileVersion(std::wstring dllPath, version_t* fileVersionOut, version_t* productVersionOut = nullptr);
+std::string GetFileVersionString(std::wstring dllPath);
 bool IsSubpath(const std::filesystem::path& path, const std::filesystem::path& base);
 bool GetRealWindowsVersion(OSVERSIONINFOW& osInfo);
 std::string GetWindowsName(const OSVERSIONINFOW& os);
@@ -60,6 +61,8 @@ void LoadProxyLibrary(const std::wstring& name, const std::wstring& optiPath, co
 
 std::map<Luid, std::filesystem::path> GetDriverStore();
 uint64_t GetTimestamp();
+
+void SetFlagEnvVar(const wchar_t* name, bool enabled);
 
 template <typename T> void DelayedDestroy(std::unique_ptr<T> ptr)
 {

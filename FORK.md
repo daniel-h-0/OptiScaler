@@ -1,5 +1,10 @@
 # BC-250 fork of OptiScaler
 
+The next FreeFG build merges upstream `539c9a1ecd2c37bee1980d0f0645919cab837855`, the source named by
+`nightly-20261025`, into the released FreeFG fork. It keeps the independent library paths, automatic INI saving
+and adaptive 3×/4× frame starts. Upstream’s non-blocking Streamline module census is combined with this fork’s
+loader-first lock order. The updated build is being qualified; the table below records the preceding 1.1.3 binary.
+
 This is OptiScaler master of 19 October 2026 (`c2e44a8b`) with the FreeFG changes below. The candidate for FreeFG
 1.1.3 fixes independent loading and saving of the XeSS, XeFG and XeLL library paths and restores adaptive
 frame-start pacing for FreeFG at 3×/4× through XeLL. FreeFG 1.0.0–1.1.2 shipped

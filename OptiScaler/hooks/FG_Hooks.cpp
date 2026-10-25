@@ -661,6 +661,13 @@ HRESULT FGHooks::hkResizeBuffers(IDXGISwapChain* This, UINT BufferCount, UINT Wi
         }
     }
 
+    // DLSSG creates its swapchain with ALLOW_TEARING and DXGI rejects resizes that add or remove it
+    if (State::Instance().activeFgOutput == FGOutput::DLSSG && !(SwapChainFlags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING))
+    {
+        LOG_DEBUG("Keeping DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING for DLSSG");
+        SwapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+    }
+
     LOG_DEBUG("BufferCount: {}, Width: {}, Height: {}, NewFormat:{}, SwapChainFlags: {:X}", BufferCount, Width, Height,
               (UINT) NewFormat, SwapChainFlags);
 
@@ -900,6 +907,13 @@ HRESULT FGHooks::hkResizeBuffers1(IDXGISwapChain3* This, UINT BufferCount, UINT 
                 SwapChainFlags = State::Instance().SCLastFlags;
             }
         }
+    }
+
+    // DLSSG creates its swapchain with ALLOW_TEARING and DXGI rejects resizes that add or remove it
+    if (State::Instance().activeFgOutput == FGOutput::DLSSG && !(SwapChainFlags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING))
+    {
+        LOG_DEBUG("Keeping DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING for DLSSG");
+        SwapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
     }
 
     LOG_DEBUG("BufferCount: {}, Width: {}, Height: {}, NewFormat:{}, SwapChainFlags: {:X}, Caller: {}", BufferCount,
@@ -1180,10 +1194,8 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
 
         LOG_DEBUG("flags: {:X}, Frametime: {}", Flags, ftDelta);
 
-#ifdef LOW_LATENCY_INPUTS
         IUnknown* device = state.currentD3D12Device ? state.currentD3D12Device : (IUnknown*) state.currentD3D11Device;
         InputCommon::mark_present_start(device);
-#endif
     }
 
     IFGFeature* fg = state.currentFG;
@@ -1319,11 +1331,6 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
         LOG_DEBUG("Final SyncInterval: {}", SyncInterval);
     }
 
-    // Used at wrapped_swapchain LocalPresent to determine is frame is interpolated or not
-    if (willPresent)
-        state.fgPresentIsCalled = true;
-
-#ifdef LOW_LATENCY_INPUTS
     // FSR-FG and XeFG with the Reflex output: the game's present as DLSSG reports it
     ID3D12CommandQueue* gameQueue = nullptr;
     uint32_t frameMultiplier = 1;
@@ -1343,7 +1350,6 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
             xefgFrameId = InputCommon::xefg_marked_frame_id();
         }
     }
-#endif
 
     HRESULT result;
     const auto presentStart = Util::MillisecondsNow();
@@ -1352,7 +1358,6 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
     else
         result = o_FGSCPresent1((IDXGISwapChain1*) This, SyncInterval, Flags, pPresentParameters);
 
-#ifdef LOW_LATENCY_INPUTS
     if (gameQueue != nullptr)
         InputCommon::fg_game_present(gameQueue, true, frameMultiplier);
 
@@ -1367,7 +1372,6 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
             InputCommon::xefg_present_status(xefgFrameId, status.framesPresented);
         }
     }
-#endif
 
     if (result == S_OK)
     {
@@ -1399,7 +1403,7 @@ HRESULT FGHooks::FGPresent(IDXGISwapChain* This, UINT SyncInterval, UINT Flags,
 
     // DXVK's DXGI presents through Vulkan where the limiter already sleeps
     if (willPresent && !state.reflexLimitsFps && state.activeFgOutput != FGOutput::NoFG &&
-        !IdentifyGpu::getPrimaryGpu().dxgiIsDxvk && !XellHooks::canLimit() && !InputCommon::can_limit_fps())
+        !IdentifyGpu::getPrimaryGpu().dxgiIsDxvk && !InputCommon::can_limit_fps())
     {
         FrameLimit::sleep(fg != nullptr ? fg->IsActive() && !fg->IsPaused() : false);
     }
