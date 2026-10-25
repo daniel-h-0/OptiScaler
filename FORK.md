@@ -7,7 +7,7 @@ frame-start pacing for FreeFG at 3×/4× through XeLL. FreeFG 1.0.0–1.1.2 ship
 
 | | |
 | --- | --- |
-| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 28,986,880 bytes |
+| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 28,987,904 bytes |
 | sha256 | `1e8025628911495a35d40764bef69157a3d80ce0c3b67b19b2cf7e090ea1dc20` |
 | Version string | `OptiScaler v10.0.0-dev (be42012aff2d-bc250-e3b0c442) (BC250 private)` |
 | Source | commit `be42012aff2dbe26e5565d076e50f227e428cad1` (tree `46047c8460883bb40b88b1eacf036efbad73a34e`) and its nine pinned submodules |
