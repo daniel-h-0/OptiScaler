@@ -10,7 +10,8 @@
  *   0.85 x the period is held to 0.95 x the period; the period is the trimmed mean of the last 16 intervals;
  * - XeLL's own sleep is part of the natural interval: a frame XeLL already brought to the period is not held, and one it
  *   left early (short sleeps on alternate frames were seen in Cyberpunk) is topped up to the same target, never beyond;
- * - a gap over 250 ms (loading, pause) restarts the history without recording the gap;
+ * - a gap over 250 ms (loading, pause), or over 2.5 learned periods with a 50 ms floor, restarts the history
+ *   without recording the gap; a gameplay hitch must not become a slower target period;
  * - 8 holds in a row means the pacer is following its own delay (load dropped or a burst of stalls):
  *   restart from natural intervals even when Present has variable waits; those waits are not GPU-throughput evidence
  *   when another output pacer is active;
@@ -50,7 +51,9 @@ static int xpc_alternating(const struct xpc*c){
 static double xpc_wait(struct xpc*c,double now,double xell_slept,double prev_block){
  (void)xell_slept;(void)prev_block;
  if(c->last<0){c->last=now;return 0;}
- if(now-c->last>250){xpc_restart(c,now);return 0;}
+ double gap=now-c->last,stall=250;
+ if(c->n>=8){double relative=2.5*xpc_period(c);if(relative<50)relative=50;if(relative<stall)stall=relative;}
+ if(gap>stall){xpc_restart(c,now);return 0;}
  if(!c->on&&xpc_alternating(c)){c->on=1;c->idle=0;}
  double w=0;
  if(c->on&&c->n>=8){

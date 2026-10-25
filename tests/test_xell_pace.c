@@ -3,7 +3,7 @@
  * research/pacing/xell_pace_sim.py: the game runs C ms of CPU work, then Present blocks until a queue slot frees
  * (depth 2, freed in pairs: the 3x bunching), the GPU consumes frames in order G ms each, and XeLL either does not
  * sleep or sleeps the game into just-in-time submission.
- * Build: gcc -O1 -g -fsanitize=address,undefined src/game/test_xell_pace.c -o test_xell_pace -lm
+ * Build: gcc -O1 -g -fsanitize=address,undefined tests/test_xell_pace.c -o test_xell_pace -lm
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,12 +64,12 @@ int main(void){
  reset();c_spike_at=300;c_spike=200;run(1,0);{double m=mean_iv(340,400);check(fabs(m-37.5)<0.5,"200 ms hitch: frames 340-400 interval",m,37.5);}
  reset();c_spike_at=300;c_spike=400;run(1,0);{double m=mean_iv(310,340),m2=mean_iv(340,400),im=imbalanced(340,N-1);check(m<39,"400 ms gap: frames 310-340 interval",m,37.5);check(fabs(m2-37.5)<0.5,"400 ms gap: frames 340-400 interval",m2,37.5);check(im<0.02,"400 ms gap: bunching removed again",im,0);}
  /* A burst of stalls followed by faster work, with variable Present waits from a second output scheduler.
-  * The waits do not justify preserving a stale slow rate. Recover within 20 game frames. */
+  * The waits do not justify preserving a stale slow rate. Do not carry the stall burst into the following game frames. */
  {struct xpc ctl;xpc_init(&ctl,0.85,0.95);double t=1000,last_interval=0;
   for(int i=0;i<60;i++){
    double natural=i<32?(i%2?35:15):i<35?(i==32?100:i==33?80:60):20;
    double w=xpc_wait(&ctl,t+natural,0,i%2?2:5);t+=natural+w;xpc_started(&ctl,t);
-   if(i>=55)last_interval=fmax(last_interval,natural+w);
+   if(i>=35)last_interval=fmax(last_interval,natural+w);
   }
   check(last_interval<=20.1,"stall burst + variable Present: recover natural 20 ms",last_interval,20);
  }
