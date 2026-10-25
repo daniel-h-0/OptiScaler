@@ -14,6 +14,7 @@ void XeLL::xell_sleep(uint32_t frame_id)
     {
         LOG_TRACE_LOWLATENCY("Sleeping with frame_id: {}", frame_id);
         o_xellSleep(xell_context, frame_id);
+        frame_pacer.start(frame_id);
     }
 }
 

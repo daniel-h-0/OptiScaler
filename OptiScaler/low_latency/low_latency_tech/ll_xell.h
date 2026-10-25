@@ -5,6 +5,7 @@
 #include <xell_d3d12.h>
 #include "low_latency/input/input_xell.h"
 #include <proxies/XeLL_Proxy.h>
+#include "freefg_frame_pacer.h"
 
 class XeLL : public LowLatencyTech
 {
@@ -21,6 +22,7 @@ class XeLL : public LowLatencyTech
 
     // XeFG's own context next to a Reflex or AntiLag 2 output: it gets the game's markers and never sleeps
     bool markers_only = false;
+    FreeFGFramePacer frame_pacer;
 
     decltype(&xellDestroyContext) o_xellDestroyContext = nullptr;
     decltype(&xellSetSleepMode) o_xellSetSleepMode = nullptr;
@@ -81,4 +83,5 @@ class XeLL : public LowLatencyTech
     xell_result_t xellGetFramesReports(xell_frame_report_t* outdata) const;
 
     void set_markers_only(bool value) { markers_only = value; }
+    void set_freefg_multiplier(unsigned multiplier) { frame_pacer.configure(markers_only ? 0 : multiplier); }
 };

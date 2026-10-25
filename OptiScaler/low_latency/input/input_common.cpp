@@ -1343,6 +1343,15 @@ void InputCommon::update()
     {
         bool xefgPaced = xefg_paced();
 
+        if (current_tech->get_mode() == LowLatencyMode::XeLL)
+        {
+            auto fg = state.CurrentFG();
+            unsigned multiplier = xefgPaced && fg && fg->IsActive() && !fg->IsPaused()
+                                      ? fg->GetInterpolatedFrameCount() + 1
+                                      : 0;
+            static_cast<XeLL*>(current_tech.get())->set_freefg_multiplier(multiplier);
+        }
+
         // LatencyFlex and XeLL without XeFG fall apart with more than 1 generated DLSSG frame, AntiLag 2 only with
         // Dynamic MFG (its frame types come from the presents, dlssg_present). Only when it starts, Force State can be
         // changed back afterwards. The FPS Limiter doesn't care.
