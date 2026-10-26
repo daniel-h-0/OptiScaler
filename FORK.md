@@ -1,7 +1,7 @@
 # BC-250 fork of OptiScaler
 
-This build merges upstream `539c9a1ecd2c37bee1980d0f0645919cab837855`, the source named by
-`nightly-20261025`, into the released FreeFG fork. It retains independent XeSS/XeFG/XeLL library paths,
+This build merges upstream `08e13adf55b3fd71a67071eac2e95973ac598df3`, the commit used by the official
+`nightly-20261025` DLL, into the released FreeFG fork. It retains independent XeSS/XeFG/XeLL library paths,
 automatic INI saving and adaptive 3×/4× frame starts. Upstream's non-blocking Streamline module census
 uses this fork's loader-first lock order.
 
@@ -10,11 +10,11 @@ FreeFG 1.0.0–1.1.2 shipped `5e570dff…` from `f971ed14` (`bc250-f971ed1`). Th
 
 | | |
 | --- | --- |
-| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 29,129,728 bytes |
-| sha256 | `af2b4cdfdf7204f0158c97236f998f290498daf47979671f26266b6ef2498413` |
-| Version string | `OptiScaler v10.0.0-dev (7bc8f8dc1c61-bc250-e3b0c442) (BC250 private)` |
-| Source | commit `7bc8f8dc1c6179277a098383ba802b634d460ed9` (tree `532c91c325f7ba7f0104168c325ef7679e29fa68`) and its nine pinned submodules |
-| Tag | `bc250-7bc8f8d`, the build commit plus this updated document |
+| File | `OptiScaler.dll` (`opti/OptiScaler.dll`), 29,214,208 bytes |
+| sha256 | `b3602882c7e194af523e50861a222d63c0c56b013cff4bfb5b187ca4f6666656` |
+| Version string | `OptiScaler v10.0.0-dev (03db4f869287-bc250-e3b0c442) (BC250 private)` |
+| Source | commit `03db4f8692878e65748769ebe583c053cae96360` (tree `65fb869215201128d9468bb3316bb3af7b9223dc`) and its nine pinned submodules |
+| Tag | `bc250-03db4f8`, the build commit plus this updated document |
 | Built | 25 October 2026, Linux, clang-cl/lld-link 23.1.3, MSVC 14.44.35207 and SDK 10.0.26100.0, `tools/bc250-build.py --jobs 8` |
 
 ## Adaptive FreeFG frame starts
@@ -160,13 +160,13 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ```sh
 git clone https://github.com/daniel-h-0/OptiScaler optiscaler-bc250
 cd optiscaler-bc250
-git checkout bc250-7bc8f8d                  # this file and tools/
+git checkout bc250-03db4f8                  # this file and tools/
 cp tools/bc250-build.py ../bc250-build.py
-git checkout --detach 7bc8f8dc1c6179277a098383ba802b634d460ed9
+git checkout --detach 03db4f8692878e65748769ebe583c053cae96360
 git submodule update --init
 git status --porcelain                      # must print nothing
-MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-af2b4cdf --jobs 8 \
-  --expect-sha256 af2b4cdfdf7204f0158c97236f998f290498daf47979671f26266b6ef2498413
+MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-b3602882 --jobs 8 \
+  --expect-sha256 b3602882c7e194af523e50861a222d63c0c56b013cff4bfb5b187ca4f6666656
 ```
 
 The candidate was built on 25 October 2026 with LLVM 23.1.3, msvc-wine 514f8ea3, MSVC 14.44.35207 and SDK
@@ -174,7 +174,7 @@ The candidate was built on 25 October 2026 with LLVM 23.1.3, msvc-wine 514f8ea3,
 
 ## Submodules
 
-These are the submodules pinned by upstream `539c9a1e`. The October 25 merge updates Vulkan-Headers;
+These are the submodules pinned by upstream `08e13adf`. The October 25 merge updates Vulkan-Headers;
 the other eight pins are unchanged from the preceding FreeFG build. The corresponding source archive records
 the exact commits and trees and includes the redistributable source.
 
@@ -195,6 +195,8 @@ The build reads headers from these submodules and links static libraries that th
 
 ## Upstream status (25 October 2026)
 
-`nightly-20261025` names upstream `539c9a1e` and was published at 09:02 UTC. Its support DLLs and licence files
-match the previous dependency pins; its OptiScaler DLL and default INI changed. The fork build above includes
-that source plus the FreeFG changes described here. FreeFG's measurements document records the tested game routes.
+`nightly-20261025` was published at 09:02 UTC. Its notes list `539c9a1e`, but the shipped DLL identifies the later
+FPS-overlay merge `08e13adf`; this fork includes that actual build commit. Its support DLLs and licence files match
+the previous dependency pins; its OptiScaler DLL and default INI changed. The earlier `bc250-7bc8f8d` candidate
+merged only the notes' commit and remains available for reproducibility. FreeFG's measurements document records
+the tested game routes.
