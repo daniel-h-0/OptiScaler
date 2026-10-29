@@ -988,6 +988,49 @@ void MenuCommon::GetCurrentBackendInfo(const API api, Upscaler& upscaler, std::s
     *name = UpscalerDisplayName(upscaler, api);
 }
 
+// Custom upscaler setting of the API, nullptr when it has none
+static CustomOptional<std::string, NoDefault>* CustomUpscalerSetting(API api)
+{
+    if (api == API::DX12)
+        return &Config::Instance()->CustomUpscaler;
+
+    if (api == API::Vulkan)
+        return &Config::Instance()->CustomUpscalerVk;
+
+    return nullptr;
+}
+
+// Custom upscaler picked for native DX12 FFX or DLSS, or native Vulkan FFX, empty for the regular ones
+static std::string SelectedCustom(Upscaler upscaler, API api)
+{
+    if (api == API::DX12)
+    {
+        auto custom = Config::Instance()->CustomUpscaler.value_or("");
+
+        return (upscaler == Upscaler::FFX && CustomProviders::IsFfx(custom)) ||
+                       (upscaler == Upscaler::DLSS && CustomProviders::IsDlss(custom))
+                   ? custom
+                   : "";
+    }
+
+    if (api == API::Vulkan)
+    {
+        auto custom = Config::Instance()->CustomUpscalerVk.value_or("");
+        return upscaler == Upscaler::FFX && CustomProviders::IsFfxVk(custom) ? custom : "";
+    }
+
+    return "";
+}
+
+// Loaded custom FFX upscaler picked for the API, nullptr for the regular ones
+static CustomFfxModule* SelectedCustomFfx(const std::string& name, API api)
+{
+    if (name.empty())
+        return nullptr;
+
+    return api == API::Vulkan ? FfxApiProxy::FindCustomUpscalerVk(name) : FfxApiProxy::FindCustomUpscalerDx12(name);
+}
+
 // List of upscalers reported by FFX for a given backend, nullptr if the backend doesn't use FFX
 static State::FfxVersionList* GetFfxVersionList(Upscaler upscaler, API api)
 {
@@ -1092,9 +1135,13 @@ void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, co
         return ShortUpscalerName(upscaler, api, index);
     };
 
+    const auto currentCustom = SelectedCustom(currentUpscaler, api);
+
     // Interop is only shown here, the list uses a tag for it
     auto selectedName = upscalerName(targetBackend, ffxIndex);
-    if (IsOn12(targetBackend))
+    if (auto custom = SelectedCustom(targetBackend, api); !custom.empty())
+        selectedName = custom;
+    else if (IsOn12(targetBackend))
         selectedName += " (Dx12)";
 
     if (!ImGui::BeginCombo("##UpscalerCombo", selectedName.c_str(), ImGuiComboFlags_HeightLargest))
@@ -1105,6 +1152,7 @@ void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, co
         Upscaler upscaler;
         int ffxIndex; // Newest upscaler reported by FFX, -1 when not using FFX
         feature_version version;
+        std::string custom; // Custom FFX or DLSS upscaler name
     };
 
     std::vector<Entry> entries;
@@ -1130,13 +1178,32 @@ void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, co
             // Fall back to a generic entry if FFX couldn't be queried
             if (!versions->names.empty())
             {
+                // Labelled with the remembered upscaler, sorted by the newest one so picking another FFX version
+                // doesn't move the entry
                 auto newest = FfxVersionsNewestFirst(*versions)[0];
-                entries.push_back({ opt, newest, feature_version(versions->names[newest]) });
+                auto index = ffxIndex >= 0 && ffxIndex < versions->names.size() ? ffxIndex : newest;
+                entries.push_back({ opt, index, feature_version(versions->names[newest]) });
                 continue;
             }
         }
 
         entries.push_back({ opt, -1, UpscalerSortVersion(opt) });
+    }
+
+    // Custom ones are sorted after the regular ones, their names don't need versions
+    // DLSS ones don't need a DLSS capable GPU
+    if (api == API::DX12)
+    {
+        for (auto& name : CustomProviders::Scan().ffx)
+            entries.push_back({ Upscaler::FFX, config->FfxUpscalerIndexFor(name).value_or_default(), {}, name });
+
+        for (auto& name : CustomProviders::Scan().dlss)
+            entries.push_back({ Upscaler::DLSS, -1, {}, name });
+    }
+    else if (api == API::Vulkan)
+    {
+        for (auto& name : CustomProviders::Scan().ffxVk)
+            entries.push_back({ Upscaler::FFX, config->FfxUpscalerIndexFor(name).value_or_default(), {}, name });
     }
 
     // Upscaler of the GPU vendor goes first, FSRs are sorted by version, newest first
@@ -1168,15 +1235,29 @@ void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, co
         if (i > 0 && group(entry.upscaler) != group(entries[i - 1].upscaler))
             ImGui::Separator();
 
-        auto label = StrFmt("%s##%d", upscalerName(entry.upscaler, entry.ffxIndex).c_str(), (int) entry.upscaler);
+        auto name = entry.custom.empty() ? upscalerName(entry.upscaler, entry.ffxIndex) : entry.custom;
+        auto label = StrFmt("%s##%d%s", name.c_str(), (int) entry.upscaler, entry.custom.c_str());
+        // Folder names in Dx12Upscaler aren't case sensitive
+        const bool selected =
+            currentUpscaler == entry.upscaler && _stricmp(currentCustom.c_str(), entry.custom.c_str()) == 0;
 
-        if (ImGui::Selectable(label.c_str(), currentUpscaler == entry.upscaler))
+        if (ImGui::Selectable(label.c_str(), selected))
         {
             State::Instance().newBackend = entry.upscaler;
 
-            // Switching to FFX starts with the newest one
-            if (entry.ffxIndex >= 0 && currentUpscaler != entry.upscaler)
-                config->FfxUpscalerIndex = entry.ffxIndex;
+            // Regular and custom entries share an upscaler type, which the backend change check compares,
+            // so a switch between them is marked here
+            if (auto customSetting = CustomUpscalerSetting(api);
+                !selected && (entry.upscaler == Upscaler::FFX || entry.upscaler == Upscaler::DLSS) &&
+                customSetting != nullptr && entry.custom != customSetting->value_or(""))
+            {
+                if (entry.custom.empty())
+                    customSetting->reset();
+                else
+                    *customSetting = entry.custom;
+
+                MARK_ALL_BACKENDS_CHANGED();
+            }
         }
 
         // Dimmed tags aligned to the right
@@ -1188,6 +1269,8 @@ void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, co
             tag = "FFX";
         else if (IsOn12(entry.upscaler))
             tag = "Dx12";
+        else if (!entry.custom.empty())
+            tag = "DLSS";
 
         if (tag != nullptr)
         {
@@ -2068,8 +2151,6 @@ void MenuCommon::FGOutputPresent() { fgOutputPresentRate.Present(Util::Milliseco
 
 void MenuCommon::FGOutputPresents(bool presents) { fgOutputPresentRate.SetEnabled(presents); }
 
-static double FGOutputFrameTime(double now) { return fgOutputPresentRate.FrameTime(now); }
-
 struct VersionCheckStatus
 {
     bool completed = false;
@@ -2141,7 +2222,7 @@ void MenuCommon::UpdateRenderTiming(RenderMenuContext& ctx)
         frameRate = 1000.0 / frameTime;
     }
 
-    ctx.fgOutputFrameTimeMs = FGOutputFrameTime(now);
+    ctx.fgOutputFrameTimeMs = fgOutputPresentRate.FrameTime(now);
     if (ctx.fgOutputFrameTimeMs > 0.0)
     {
         frameTime = ctx.fgOutputFrameTimeMs;
@@ -2566,7 +2647,10 @@ void MenuCommon::UpdateFrameTimeAverages(RenderMenuContext& ctx)
 
         float lastFT = static_cast<float>(state.frameTimes.empty() ? 0.0f : state.frameTimes.back());
         float lastUT = static_cast<float>(state.upscaleTimes.empty() ? 0.0f : state.upscaleTimes.back());
-        gFrameTimes.Push(lastFT);
+
+        if (!fgOutputPresentRate.TakeIntervals([](double ms) { gFrameTimes.Push(static_cast<float>(ms)); }))
+            gFrameTimes.Push(lastFT);
+
         gUpscalerTimes.Push(lastUT);
 
         averageFrameTime = gFrameTimes.Average();
@@ -2769,6 +2853,10 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
             {
                 fgText = formatFg("Combo", Nvngx_FG::getMaxFakeFramesCount());
             }
+            else if (activeNvngxFg == FGNvngxReplacement::Custom)
+            {
+                fgText = formatFg(state.activeFgNvngxCustom, Nvngx_FG::getMaxFakeFramesCount());
+            }
             else if (state.activeFgOutput == FGOutput::DLSSG && fg)
             {
                 fgText = formatFg("DLSSG", fg->GetMaxInterpolationCount());
@@ -2816,6 +2904,7 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
 
             const bool compact = config->FpsOverlayCompactLabels.value_or_default();
             auto L = [compact](const char* full, const char* shorter) { return std::string(compact ? shorter : full); };
+            const bool averages = !config->FpsOverlayHideAverages.value_or_default();
 
             std::string featureText;
 
@@ -2908,7 +2997,7 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
 
                 if (fpsRow == FpsOverlayFpsRow_FrameTime)
                     line.Label(", ").Value("fpsFrameTime", StrFmt("%.2f ms", shown.frameTime));
-                else
+                else if (averages)
                     line.Label(L(", Avg: ", " Avg "))
                         .Value("fpsAverage", StrFmt("%.1f", 1000.0 / shown.averageFrameTime));
 
@@ -2946,17 +3035,22 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
 
             rows[OverlayRow_FrameTime] = OverlayLine()
                                              .Label(L("Frame Time: ", "FT "))
-                                             .Value("frameTime", StrFmt("%.2f ms", shown.lastFrameTime))
-                                             .Label(L(", Avg: ", " Avg "))
-                                             .Value("frameTimeAverage", StrFmt("%.2f ms", shown.averageFrameTime));
+                                             .Value("frameTime", StrFmt("%.2f ms", shown.lastFrameTime));
+
+            if (averages)
+                rows[OverlayRow_FrameTime]
+                    ->Label(L(", Avg: ", " Avg "))
+                    .Value("frameTimeAverage", StrFmt("%.2f ms", shown.averageFrameTime));
 
             rows[OverlayRow_FrameTimeGraph] = graphRow("##FrameTimeGraph", &gFrameTimes, 66.6f);
 
-            rows[OverlayRow_UpscalerTime] =
-                OverlayLine()
-                    .Label(L("Upscaler Time: ", "UT "))
-                    .Value("upscalerTime", StrFmt("%.2f ms", shown.lastUpscalerTime))
-                    .Label(L(", Avg: ", " Avg "))
+            rows[OverlayRow_UpscalerTime] = OverlayLine()
+                                                .Label(L("Upscaler Time: ", "UT "))
+                                                .Value("upscalerTime", StrFmt("%.2f ms", shown.lastUpscalerTime));
+
+            if (averages)
+                rows[OverlayRow_UpscalerTime]
+                    ->Label(L(", Avg: ", " Avg "))
                     .Value("upscalerTimeAverage", StrFmt("%.2f ms", shown.averageUpscalerTime));
 
             rows[OverlayRow_UpscalerTimeGraph] = graphRow("##UpscalerFrameTimeGraph", &gUpscalerTimes, 20.0f);
@@ -3193,8 +3287,28 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
                 if (fg != nullptr)
                     localFrameCount = fg->FrameCount();
 
-                ImGui::Text("FGId: %llu, RfxId: %llu", localFrameCount, state.reflexFrameId);
-                ImGui::Text("Low latency timings, whole frame: %.1fms", rangeInNs / 1000.0);
+                // Text lines with the overlay's shadow or outline under them
+                auto shadowedText = [&](ImU32 color, const std::string& text)
+                {
+                    const char* begin = text.c_str();
+                    const char* end = begin + text.size();
+                    drawText(drawList, ImGui::GetFontSize(), ImGui::GetCursorScreenPos(), color, begin, end, true);
+
+                    ImGui::PushStyleColor(ImGuiCol_Text, color);
+                    ImGui::TextUnformatted(begin, end);
+                    ImGui::PopStyleColor();
+                };
+
+                // OverlayLine frameIds;
+                // frameIds.Label("FGId: ")
+                //     .Value("lowLatencyFgId", StrFmt("%llu", localFrameCount))
+                //     .Label(", RfxId: ")
+                //     .Value("lowLatencyRfxId", StrFmt("%llu", state.reflexFrameId));
+                // drawLine(frameIds);
+                OverlayLine wholeFrame;
+                wholeFrame.Label("Low latency timings, whole frame: ")
+                    .Value("lowLatencyFrame", StrFmt("%.1fms", rangeInNs / 1000.0));
+                drawLine(wholeFrame);
 
                 const auto maxWidth = horizontal ? fpsScale * 300.0f : plotSize.x;
 
@@ -3208,7 +3322,8 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
                     const auto& timing = timingOpt.value();
                     float duration = static_cast<float>(timing.length * rangeInNs / 1000.0);
 
-                    ImGui::TextColored(toneMappedColor, "%-12s %4.1fms", desc, duration);
+                    shadowedText(ImGui::ColorConvertFloat4ToU32(toneMappedColor),
+                                 StrFmt("%-12s %4.1fms", desc, duration));
 
                     auto leftLimit = ImGui::GetItemRectMin().x + offsetForText * fpsScale;
 
@@ -3666,12 +3781,19 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
     // FFX -----------------
     if (!usesDlssd && (currentBackend == Upscaler::FFX || currentBackend == Upscaler::FFX_on12))
     {
-        if (auto versions = GetFfxVersionList(currentBackend, state.api);
+        const auto customName = SelectedCustom(currentBackend, state.api);
+        const auto customUpscaler = SelectedCustomFfx(customName, state.api);
+        auto& upscalerIndex = config->FfxUpscalerIndexFor(customName);
+
+        // A custom upscaler only has a list once it got loaded
+        if (auto versions = customName.empty()          ? GetFfxVersionList(currentBackend, state.api)
+                            : customUpscaler != nullptr ? &customUpscaler->versions
+                                                        : nullptr;
             versions != nullptr && !versions->names.empty())
         {
             ImGui::Spacing();
 
-            const int ffxIndex = config->FfxUpscalerIndex.value_or_default();
+            const int ffxIndex = upscalerIndex.value_or_default();
             auto currentName =
                 ffxIndex >= 0 && ffxIndex < versions->names.size() ? StrFmt("FSR %s", versions->names[ffxIndex]) : "";
 
@@ -3684,7 +3806,7 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
                     if (ImGui::Selectable(StrFmt("FSR %s##%d", versions->names[n], n).c_str(), ffxIndex == n) &&
                         ffxIndex != n)
                     {
-                        config->FfxUpscalerIndex = n;
+                        upscalerIndex = n;
                         state.newBackend = currentBackend;
                         MARK_ALL_BACKENDS_CHANGED();
                     }
@@ -3773,8 +3895,11 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
                         "Preset 5 is meant for Ultra Performance");
 
             // Display the active preset right next to the combo box instead of using a table
+            // The active preset can be left over from another module, so a custom one checks its own hook
             ImGui::SameLine();
-            if (state.currentFsr4Preset.has_value())
+            if (customUpscaler != nullptr && !FSR4Presets::IsModuleHooked(customUpscaler->module.dll))
+                ImGui::TextDisabled("(Failed to hook)");
+            else if (state.currentFsr4Preset.has_value())
                 ImGui::TextDisabled("(Active: %d)", state.currentFsr4Preset.value());
             else if (FSR4Presets::IsAnyModuleHooked())
                 ImGui::TextColored(StatusWarn(), "(Potential FSR3 fallback)");
@@ -3783,17 +3908,18 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
 
             // FSR 4 Models of the module running the selected upscaler, only listed when the GPU can run more than one
             HMODULE upscalerModule = nullptr;
-            if (auto versions = GetFfxVersionList(currentBackend, state.api);
-                versions != nullptr && config->FfxUpscalerIndex.value_or_default() >= 0 &&
-                config->FfxUpscalerIndex.value_or_default() < versions->ids.size())
+            if (customUpscaler != nullptr)
+                upscalerModule = customUpscaler->module.dll;
+            else if (auto versions = GetFfxVersionList(currentBackend, state.api);
+                     versions != nullptr && config->FfxUpscalerIndex.value_or_default() >= 0 &&
+                     config->FfxUpscalerIndex.value_or_default() < versions->ids.size())
             {
                 auto versionId = versions->ids[config->FfxUpscalerIndex.value_or_default()];
 
                 if (versions == &state.ffxUpscalerVersionsDx12)
                     upscalerModule = FfxApiProxy::UpscalerModule(versionId);
-                else if (versions == &state.ffxUpscalerVersionsVk && FSR4DriverProviderVk::IsAvailable() &&
-                         versionId == FSR4DriverProviderVk::VersionId())
-                    upscalerModule = FSR4DriverProviderVk::Module()->dll;
+                else if (versions == &state.ffxUpscalerVersionsVk)
+                    upscalerModule = FfxApiProxy::UpscalerModuleVk(versionId);
             }
 
             if (auto models = FSR4Models::SelectableModels(upscalerModule); !models.empty())
@@ -4340,8 +4466,8 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
     // DLSSG output requirements
     auto constexpr dlssgOutputIndex = (uint32_t) FGOutput::DLSSG;
     const bool maySupportDlssg = primaryGpu.vendorId == VendorId::Nvidia;
-    const bool hasDlssgReplacement =
-        state.nukemsFgFileAvailable || state.artursFgFileAvailable || FfxApiProxy::IsFGReady(false);
+    const bool hasDlssgReplacement = state.nukemsFgFileAvailable || state.artursFgFileAvailable ||
+                                     FfxApiProxy::IsFGReady(false) || !CustomProviders::Scan().dlssg.empty();
 
     if (!maySupportDlssg && hasDlssgReplacement)
     {
@@ -4410,6 +4536,14 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
 
     // clang-format on
 
+    // Custom ones go after the rest, each one is a value from FGNvngxReplacement::Custom on
+    const auto& customFgs = CustomProviders::Scan().dlssg;
+    auto constexpr fgNvngxCustomIndex = (uint32_t) FGNvngxReplacement::Custom;
+
+    for (uint32_t i = 0; i < customFgs.size(); i++)
+        nvngxOptions.push_back({ (FGNvngxReplacement) (fgNvngxCustomIndex + i), customFgs[i],
+                                 StrFmt("Custom DLSSG from custom\\%s\\dlssg", customFgs[i].c_str()) });
+
     bool replaceFgOutputWithNvngx = false;
     bool showNvngxFgDowndown = false;
 
@@ -4440,9 +4574,12 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
     nvngxOptions[fgNvngxArtursIndex].set_disabled(!state.artursFgFileAvailable, "Missing dlss-enabler-headless.dll");
 
     auto constexpr fgNvngxFfxIndex = (uint32_t) FGNvngxReplacement::FFX;
-    nvngxOptions[fgNvngxFfxIndex].set_disabled(state.swapchainApi == API::Vulkan, "Unsupported API");
-    nvngxOptions[fgNvngxFfxIndex].set_disabled(!FfxApiProxy::IsFGReady(false),
-                                               "Missing amd_fidelityfx_framegeneration_dx12.dll");
+    if (state.swapchainApi == API::Vulkan)
+        nvngxOptions[fgNvngxFfxIndex].set_disabled(!FfxApiProxy::IsFGReadyVk(),
+                                                   "Missing amd_fidelityfx_framegeneration_vk.dll");
+    else
+        nvngxOptions[fgNvngxFfxIndex].set_disabled(!FfxApiProxy::IsFGReady(false),
+                                                   "Missing amd_fidelityfx_framegeneration_dx12.dll");
 
     auto constexpr fgNvngxComboIndex = (uint32_t) FGNvngxReplacement::Combo;
     nvngxOptions[fgNvngxComboIndex].set_disabled(state.swapchainApi == API::Vulkan, "Unsupported API");
@@ -4454,6 +4591,39 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
 
     if (!config->FGNvngxReplacement.has_value())
         config->FGNvngxReplacement = config->FGNvngxReplacement.value_or_default(); // need to have a value before combo
+
+    // Folder names in FGNvngxReplacement aren't case sensitive
+    auto isActiveCustomFg = [&config, &state](const std::string& name)
+    {
+        return config->FGNvngxReplacement.value_or_default() == FGNvngxReplacement::Custom &&
+               _stricmp(state.fgNvngxCustom.c_str(), name.c_str()) == 0;
+    };
+
+    auto nvngxCombo = [&](const char* label)
+    {
+        auto current = config->FGNvngxReplacement.value_or_default();
+
+        if (current == FGNvngxReplacement::Custom)
+            current = (FGNvngxReplacement) (fgNvngxCustomIndex +
+                                            (std::ranges::find_if(customFgs, isActiveCustomFg) - customFgs.begin()));
+
+        auto selected = current;
+        PopulateCombo(label, selected, nvngxOptions);
+
+        if (selected == current)
+            return;
+
+        if ((uint32_t) selected >= fgNvngxCustomIndex)
+        {
+            state.fgNvngxCustom = customFgs[(uint32_t) selected - fgNvngxCustomIndex];
+            config->FGNvngxReplacement = FGNvngxReplacement::Custom;
+        }
+        else
+        {
+            state.fgNvngxCustom.clear();
+            config->FGNvngxReplacement = selected;
+        }
+    };
 
     if (state.activeFgInput != FGInput::ForceXeLL)
     {
@@ -4473,7 +4643,7 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
             if (replaceFgOutputWithNvngx)
             {
                 // Disable None?
-                PopulateCombo("FG Nvngx", config->FGNvngxReplacement, nvngxOptions);
+                nvngxCombo("FG Nvngx");
                 ShowTooltip("What backend to use instead of the real DLSSG");
             }
             else
@@ -4486,7 +4656,7 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
             {
                 ImGui::TableNextColumn();
 
-                PopulateCombo("FG Nvngx Replacement", config->FGNvngxReplacement, nvngxOptions);
+                nvngxCombo("FG Nvngx Replacement");
                 ShowTooltip("What backend to use instead of the real DLSSG");
             }
 
@@ -4505,10 +4675,18 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
 
             else if (FfxApiProxy::IsFGReady(false))
                 config->FGNvngxReplacement.set_volatile_value(FGNvngxReplacement::FFX);
+
+            else if (!customFgs.empty())
+            {
+                state.fgNvngxCustom = customFgs[0];
+                config->FGNvngxReplacement.set_volatile_value(FGNvngxReplacement::Custom);
+            }
         }
 
-        const bool nvngxFgChanged = (replaceFgOutputWithNvngx || showNvngxFgDowndown) &&
-                                    state.activeFgNvngx != config->FGNvngxReplacement.value_or_default();
+        const bool nvngxFgChanged =
+            (replaceFgOutputWithNvngx || showNvngxFgDowndown) &&
+            (state.activeFgNvngx != config->FGNvngxReplacement.value_or_default() ||
+             (state.activeFgNvngx == FGNvngxReplacement::Custom && !isActiveCustomFg(state.activeFgNvngxCustom)));
         // XeFG input to XeFG output runs without OptiScaler's FG output
         auto configFgOutput = config->FGOutput.value_or_default();
 
@@ -6077,6 +6255,11 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
         {
             SeparatorWithHelpMarker("Frame Generation (FSRFG via FFX)", "FFX using the DLSSG swapchain");
         }
+        else if (activeNvngxFg == FGNvngxReplacement::Custom)
+        {
+            SeparatorWithHelpMarker(StrFmt("Frame Generation (%s)", state.activeFgNvngxCustom.c_str()).c_str(),
+                                    "Custom DLSSG from the custom folder");
+        }
         else if (activeNvngxFg == FGNvngxReplacement::Combo)
         {
             SeparatorWithHelpMarker("Frame Generation (Enabler + FFX)",
@@ -6118,8 +6301,9 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                 // Hide to reduce confusion, config is still read
                 const bool isUnrealEngine = State::Instance().NVNGX_Engine == NVSDK_NGX_ENGINE_TYPE_UNREAL ||
                                             State::Instance().gameQuirks & GameQuirk::ForceUnrealEngine;
-                const bool isDllProxyNvngxType =
-                    activeNvngxFg == FGNvngxReplacement::Nukems || activeNvngxFg == FGNvngxReplacement::Arturs;
+                const bool isDllProxyNvngxType = activeNvngxFg == FGNvngxReplacement::Nukems ||
+                                                 activeNvngxFg == FGNvngxReplacement::Arturs ||
+                                                 activeNvngxFg == FGNvngxReplacement::Custom;
                 if (isDllProxyNvngxType && !primaryGpu.dlssCapable && primaryGpu.fsr4Support == FSR4Support::None &&
                     !primaryGpu.d3d12IsVkd3dProton && !isUnrealEngine)
                 {
@@ -8151,6 +8335,11 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                            "The Upscale Ratio row in the presets from Simple on, Custom has it in its rows");
             ImGui::EndDisabled();
 
+            ImGui::SameLine(0.0f, 6.0f);
+
+            optionCheckbox("Hide Averages", config->FpsOverlayHideAverages,
+                           "Only the current values, without the averages of FPS, frame time and upscaler time");
+
             ImGui::Spacing();
 
             // -1 is the default spacing
@@ -8209,11 +8398,11 @@ void MenuCommon::RenderFpsOverlaySettings(RenderMenuContext& ctx)
                   "OverlaysUseTheme=false;Type=3;CompactLabels=true;Font=unispace bd.ttf;Alpha=0;Rounding=0;"
                   "LabelColor=0xFF9C00;ValueColor=0xFFFFFF;GraphColor=0xFF9C00;Shadow=2;ShadowStrength=0.5;"
                   "ShadowColor=0x000000;UpdateInterval=500" },
-                { "Glass Strip", "A strip at the top center: Bahnschrift, cyan values on a dark glass panel",
-                  "OverlaysUseTheme=false;Pos=4;Horizontal=true;Type=2;CompactLabels=true;"
-                  "Font=bahnschrift.ttf;Alpha=0.35;BGColor=0x0A0F14;Rounding=10;LabelColor=0x8A9BA8;"
-                  "ValueColor=0x00E5FF;GraphColor=0x00E5FF;LabelScale=0.85;ValueScale=1.1;LetterSpacing=0.5;"
-                  "Shadow=1;ShadowStrength=0.5;UpdateInterval=250" },
+                { "Strip", "A strip at the top center: Bahnschrift, FPS and upscaler time in orange on a dark panel",
+                  "Pos=4;Type=7;Horizontal=true;Rows=fps,-upscale,-frametime,-frametimegraph,upscaler,"
+                  "-upscalergraph,-lowlatency;FpsRow=2;UpdateInterval=250;Alpha=0.35;Font=bahnschrift.ttf;"
+                  "LetterSpacing=0.5;LabelScale=0.85;ValueScale=1.1;LabelColor=0xFFFFFF;ValueColor=0xFF9A00;"
+                  "GraphColor=0x00E5FF;BGColor=0x0A0F14;Rounding=10;HideAverages=true" },
             };
 
             const float presetCount = static_cast<float>(std::size(presets));
@@ -8980,6 +9169,9 @@ void MenuCommon::RenderDetectedInfo(RenderMenuContext& ctx)
         StatusFlag("FFX 3.1", FfxApiProxy::Dx12Module() != nullptr);
         StatusFlag("FFX SR", FfxApiProxy::Dx12Module_SR() != nullptr);
         StatusFlag("FFX FG", FfxApiProxy::Dx12Module_FG() != nullptr);
+        StatusFlag("FFX Vk", FfxApiProxy::VkModule() != nullptr);
+        StatusFlag("FFX Vk SR", FfxApiProxy::VkModule_SR() != nullptr);
+        StatusFlag("FFX Vk FG", FfxApiProxy::VkModule_FG() != nullptr);
         StatusFlag("OptiPatcher", state.isOptiPatcherSucceed);
         StatusFlag("Linux", state.isRunningOnLinux);
         StatusFlag("DLSS capable GPU", primaryGpu.dlssCapable);
@@ -9625,6 +9817,7 @@ void MenuCommon::RenderMainMenuTabs(RenderMenuContext& ctx)
             const char* nvngxName = activeNvngxFg == FGNvngxReplacement::Nukems   ? "Nukems"
                                     : activeNvngxFg == FGNvngxReplacement::Arturs ? "Enabler"
                                     : activeNvngxFg == FGNvngxReplacement::FFX    ? "FFX"
+                                    : activeNvngxFg == FGNvngxReplacement::Custom ? state.activeFgNvngxCustom.c_str()
                                                                                   : "Combo";
             const int detectedCount = state.dlssgDetectedInterpolationCount;
 
@@ -10162,7 +10355,7 @@ void MenuCommon::RenderHudlessResourcesWindow(RenderMenuContext& ctx, ImGuiWindo
     }
 }
 
-// Game name | API | GPU | Input, above the tabs
+// API | GPU | Input, above the tabs
 static void RenderGameInfoRow(State& state, const GpuInformation& primaryGpu)
 {
     // Game name is in the window title
@@ -10172,7 +10365,18 @@ static void RenderGameInfoRow(State& state, const GpuInformation& primaryGpu)
                               : IdentifyGpu::gameUsesVkd3dProton() ? " (VKD3D)"
                                                                    : "",
                               primaryGpu.name.c_str(), ApiUpscalerInputName(state.currentInputApiName).c_str());
-    ImGui::TextWrapped("%s", line.c_str());
+
+    const float avail = ImGui::GetContentRegionAvail().x;
+    const float textWidth = ImGui::CalcTextSize(line.c_str()).x;
+    if (textWidth < avail)
+    {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - textWidth) * 0.5f);
+        ImGui::TextUnformatted(line.c_str());
+    }
+    else
+    {
+        ImGui::TextWrapped("%s", line.c_str());
+    }
 }
 
 void MenuCommon::RenderMainMenuWindow(RenderMenuContext& ctx)
