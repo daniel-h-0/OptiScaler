@@ -117,6 +117,22 @@ bool DLSSFeatureDx12::EvaluateInternal(ID3D12GraphicsCommandList* InCommandList,
     {
         ProcessEvaluateParams(InParameters);
 
+        // HLX DLSS interprets motion/exposure and reactive-mask inputs according to the game's original API.
+        // Protocol used by HelixSR Scaler v2.1.0; the managed provider has a stable custom-folder identity.
+        if (_custom != nullptr && _hlxInput)
+        {
+            const auto api = State::Instance().currentInputApiName;
+            const unsigned source = api == ApiUpscalerInput::DLSS_DX11 || api == ApiUpscalerInput::DLSS_DX12 ||
+                                            api == ApiUpscalerInput::DLSS_VK
+                                        ? 1
+                                    : api == ApiUpscalerInput::XeSS_DX11 || api == ApiUpscalerInput::XeSS_DX12 ||
+                                              api == ApiUpscalerInput::XeSS_VK
+                                        ? 2
+                                        : 0;
+            InParameters->Set("HelixSR.Upscale.Input.API", source);
+            InParameters->Set("HelixSR.Upscale.MaskOff", Config::Instance()->DisableReactiveMask.value_or(false) ? 1u : 0u);
+        }
+
         nvResult = EvaluateFeature()(InCommandList, _p_dlssHandle, InParameters, NULL);
 
         if (nvResult != NVSDK_NGX_Result_Success)
@@ -157,6 +173,7 @@ DLSSFeatureDx12::DLSSFeatureDx12(unsigned int InHandleId, NVSDK_NGX_Parameter* I
 {
     if (!customUpscaler.empty())
     {
+        _hlxInput = _stricmp(customUpscaler.c_str(), "hlx-dlss") == 0;
         _custom = NVNGXProxy::LoadCustomDx12(customUpscaler);
         _moduleLoaded = _custom != nullptr;
 

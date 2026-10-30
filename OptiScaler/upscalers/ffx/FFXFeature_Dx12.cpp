@@ -580,6 +580,9 @@ bool FFXFeatureDx12::InitFFX(const NVSDK_NGX_Parameter* InParameters)
             upscalerIndex.set_volatile_value(0);
 
         parse_version(versions.names[upscalerIndex.value_or_default()]);
+        const char* providerName = versions.names[upscalerIndex.value_or_default()];
+        const bool hlxFsr = providerName != nullptr && std::strncmp(providerName, "HLX FSR 4", 9) == 0;
+        LOG_INFO("Selected FFX provider: {}", providerName != nullptr ? providerName : "unknown");
 
         ffxOverrideVersion override = { 0 };
         override.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
@@ -593,7 +596,8 @@ bool FFXFeatureDx12::InitFFX(const NVSDK_NGX_Parameter* InParameters)
         _customAutoExposure = false;
         auto& cfg = *Config::Instance();
 
-        if (Version().major >= 4 && AutoExposure() && !cfg.FsrNonLinearPQ.value_or_default() &&
+        // HLX handles the render subrect itself; replacing its exposure path changes its input contract.
+        if (!hlxFsr && Version().major >= 4 && AutoExposure() && !cfg.FsrNonLinearPQ.value_or_default() &&
             !cfg.FsrNonLinearSRGB.value_or_default() && !cfg.FsrNonLinearColorSpace.value_or_default())
         {
             if (_autoExposure == nullptr)
@@ -624,7 +628,7 @@ bool FFXFeatureDx12::InitFFX(const NVSDK_NGX_Parameter* InParameters)
             }
         }
 
-        _name = "FSR";
+        _name = hlxFsr ? "HLX FSR 4" : "FSR";
     }
 
     SetInit(true);

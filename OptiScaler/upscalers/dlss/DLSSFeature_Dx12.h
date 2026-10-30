@@ -9,6 +9,7 @@ class DLSSFeatureDx12 : public DLSSFeature, public IFeature_Dx12
   private:
     // Custom NGX runtime, nullptr for NVIDIA's
     CustomNgxModule* _custom = nullptr;
+    bool _hlxInput = false;
 
     // Functions of the NGX runtime this runs on
     PFN_D3D12_CreateFeature CreateFeature() const;

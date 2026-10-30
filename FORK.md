@@ -1,5 +1,17 @@
 # BC-250 fork of OptiScaler
 
+## FreeFG 1.1.6 candidate
+
+The candidate merges upstream `e7e3872d410f704479d94d318d68d163b6b58947` (29 October 2026) into the accepted fork.
+Its upstream custom provider mechanism loads HLX DLSS and HLX FSR 4 from separate folders. The fork forwards the
+original input API and the reactive-mask choice to HLX DLSS using HelixSR Scaler 2.1.0’s parameter contract. For an
+FFX provider whose reported name starts with `HLX FSR 4`, it preserves HLX’s exposure implementation and logs the
+actual provider identity so AMD fallback cannot be mistaken for HLX qualification. No Helix code or model data is
+part of this fork. Existing library-path, INI-save and adaptive frame-start changes are retained.
+
+Runtime qualification and the final candidate build identity are recorded with FreeFG’s 1.1.6 candidate report.
+The release details below describe the prior accepted October 25 build.
+
 This build merges upstream `08e13adf55b3fd71a67071eac2e95973ac598df3`, the commit used by the official
 `nightly-20261025` DLL, into the released FreeFG fork. It retains independent XeSS/XeFG/XeLL library paths,
 automatic INI saving and adaptive 3×/4× frame starts. Upstream's non-blocking Streamline module census
