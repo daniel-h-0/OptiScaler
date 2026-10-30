@@ -10,6 +10,7 @@ class DxgiFactoryHooks
   public:
     static void HookToFactory(IDXGIFactory* pFactory);
     static void HookToDLSSGFactory(IDXGIFactory* pFactory);
+    static void MarkAuxiliaryFactory(IUnknown* factory);
 
   private:
     using PFN_EnumAdapterByGpuPreference =

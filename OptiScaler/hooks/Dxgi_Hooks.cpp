@@ -97,6 +97,17 @@ inline static HRESULT hkCreateDXGIFactory(REFIID riid, IDXGIFactory** ppFactory)
         return o_CreateDXGIFactory(riid, ppFactory);
     }
 
+    if (CheckDllName(&caller, &auxiliaryDxgiFactoryNames))
+    {
+        const HRESULT result = o_CreateDXGIFactory(riid, ppFactory);
+        if (SUCCEEDED(result) && ppFactory != nullptr && *ppFactory != nullptr)
+        {
+            DxgiFactoryHooks::MarkAuxiliaryFactory(*ppFactory);
+            LOG_INFO("Auxiliary factory bypasses frame generation: {}", caller);
+        }
+        return result;
+    }
+
     if (Config::Instance()->DxgiFactoryWrapping.value_or_default() && CheckDllName(&caller, &skipDxgiWrappingNames))
     {
         LOG_INFO("Skipping wrapping for: {}", caller);
@@ -160,6 +171,17 @@ inline static HRESULT hkCreateDXGIFactory1(REFIID riid, IDXGIFactory1** ppFactor
         return o_CreateDXGIFactory1(riid, ppFactory);
     }
 
+    if (CheckDllName(&caller, &auxiliaryDxgiFactoryNames))
+    {
+        const HRESULT result = o_CreateDXGIFactory1(riid, ppFactory);
+        if (SUCCEEDED(result) && ppFactory != nullptr && *ppFactory != nullptr)
+        {
+            DxgiFactoryHooks::MarkAuxiliaryFactory(*ppFactory);
+            LOG_INFO("Auxiliary factory bypasses frame generation: {}", caller);
+        }
+        return result;
+    }
+
     if (Config::Instance()->DxgiFactoryWrapping.value_or_default() && CheckDllName(&caller, &skipDxgiWrappingNames))
     {
         LOG_INFO("Skipping wrapping for: {}", caller);
@@ -221,6 +243,17 @@ inline static HRESULT hkCreateDXGIFactory2(UINT Flags, REFIID riid, IDXGIFactory
     {
         LOG_DEBUG("Bypassing hooking/wrapping during Luma D3D12 device creation");
         return o_CreateDXGIFactory2(Flags, riid, ppFactory);
+    }
+
+    if (CheckDllName(&caller, &auxiliaryDxgiFactoryNames))
+    {
+        const HRESULT result = o_CreateDXGIFactory2(Flags, riid, ppFactory);
+        if (SUCCEEDED(result) && ppFactory != nullptr && *ppFactory != nullptr)
+        {
+            DxgiFactoryHooks::MarkAuxiliaryFactory(*ppFactory);
+            LOG_INFO("Auxiliary factory bypasses frame generation: {}", caller);
+        }
+        return result;
     }
 
     if (Config::Instance()->DxgiFactoryWrapping.value_or_default() && CheckDllName(&caller, &skipDxgiWrappingNames))

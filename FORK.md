@@ -1,5 +1,23 @@
 # BC-250 fork of OptiScaler
 
+## Social Club auxiliary swapchains
+
+Social Club's D3D12 renderer creates its own swapchain in GTA V Enhanced. Passing that auxiliary swapchain to
+XeFG can replace the game's context and crash inside the Intel runtime, even with interpolation disabled.
+The existing size heuristic is insufficient: the descriptor can be 0×0 (window-derived), and the client size
+varies between systems. A local reproduction measured 119×100, outside the existing below-100-pixel cutoff.
+
+Factories created by `SocialClubD3D12Renderer.dll` now carry a private DXGI marker. The regular and DLSSG
+swapchain hooks pass marked factories through unchanged, before changing the game's FG state. DXGI owns the
+marker with its factory, so there is no stale-pointer registry to maintain. The policy does not enable factory
+wrapping, disable the Social Club renderer, or change other callers' factories. The separate existing size guard
+also resolves zero axes from the output window without rewriting the caller's descriptor.
+
+`tools/test-window-swapchain-size.py` compiles the actual guard and marker helpers with controlled API results
+under ASan/UBSan. It checks 16 size cases and ten marker/ownership cases. Runtime qualification additionally uses
+real D3D12 main/auxiliary swapchains and normal GTA Story Mode starts. Factory wrapping avoided the reproduced
+crash but stalled at initialization on the tested stack; it is not the remedy implemented here.
+
 ## FreeFG 1.1.6 candidate
 
 The candidate merges upstream `e7e3872d410f704479d94d318d68d163b6b58947` (29 October 2026) into the accepted fork.

@@ -20,6 +20,34 @@
 
 // #define DETAILED_SC_LOGS
 
+// A marker on the DXGI object follows its lifetime and interface aliases. A
+// pointer registry would retain stale entries when an overlay releases a factory.
+static const GUID AuxiliaryFactoryMarker = {
+    0x7d8cb67a, 0x169b, 0x4d9e, { 0x8b, 0x5a, 0x31, 0xeb, 0x5e, 0x8c, 0x26, 0x50 }
+};
+
+void DxgiFactoryHooks::MarkAuxiliaryFactory(IUnknown* factory)
+{
+    IDXGIObject* object = nullptr;
+    if (factory == nullptr || FAILED(factory->QueryInterface(IID_PPV_ARGS(&object))))
+        return;
+
+    const UINT marker = 1;
+    const HRESULT result = object->SetPrivateData(AuxiliaryFactoryMarker, sizeof(marker), &marker);
+    object->Release();
+    if (FAILED(result))
+        LOG_WARN("Could not mark auxiliary DXGI factory: {:X}", (UINT) result);
+}
+
+static bool IsAuxiliaryFactory(IDXGIFactory* factory)
+{
+    UINT marker = 0;
+    UINT size = sizeof(marker);
+    return factory != nullptr &&
+           SUCCEEDED(factory->GetPrivateData(AuxiliaryFactoryMarker, &size, &marker)) &&
+           size == sizeof(marker) && marker == 1;
+}
+
 #ifdef DETAILED_SC_LOGS
 #include <magic_enum.hpp>
 #endif
@@ -395,9 +423,42 @@ void DxgiFactoryHooks::HookToDLSSGFactory(IDXGIFactory* pFactory)
     DetourTransactionCommit();
 }
 
+// DXGI resolves zero descriptor dimensions from the HWND. Test the same
+// effective size before letting an auxiliary window replace the FG swapchain.
+// Keep the caller's descriptor untouched for the original DXGI implementation.
+static bool IsTinyWindowSwapchain(HWND window, UINT width, UINT height)
+{
+    bool widthKnown = width != 0;
+    bool heightKnown = height != 0;
+    RECT client {};
+    if ((!widthKnown || !heightKnown) && window != nullptr && GetClientRect(window, &client))
+    {
+        if (!widthKnown)
+        {
+            width = client.right > client.left ? static_cast<UINT>(client.right - client.left) : 0;
+            widthKnown = true;
+        }
+        if (!heightKnown)
+        {
+            height = client.bottom > client.top ? static_cast<UINT>(client.bottom - client.top) : 0;
+            heightKnown = true;
+        }
+        LOG_DEBUG("Window {:X}: resolved swapchain size {}x{}", (size_t) window, width, height);
+    }
+    return (widthKnown && width < 100) || (heightKnown && height < 100);
+}
+
 HRESULT DxgiFactoryHooks::CreateSwapChain(IDXGIFactory* realFactory, IUnknown* pDevice, DXGI_SWAP_CHAIN_DESC* pDesc,
                                           IDXGISwapChain** ppSwapChain)
 {
+    if (IsAuxiliaryFactory(realFactory))
+    {
+        LOG_DEBUG("Auxiliary factory: preserving native swapchain");
+        ScopedSkipDxgiLoadChecks skipDxgiLoadChecks {};
+        ScopedSkipParentWrapping skipParentWrapping {};
+        return o_CreateSwapChain(realFactory, pDevice, pDesc, ppSwapChain);
+    }
+
     *ppSwapChain = nullptr;
 
     if (State::Instance().vulkanCreatingSC)
@@ -427,8 +488,7 @@ HRESULT DxgiFactoryHooks::CreateSwapChain(IDXGIFactory* realFactory, IUnknown* p
         return res;
     }
 
-    if ((pDesc->BufferDesc.Height != 0 && pDesc->BufferDesc.Height < 100) ||
-        (pDesc->BufferDesc.Width != 0 && pDesc->BufferDesc.Width < 100))
+    if (IsTinyWindowSwapchain(pDesc->OutputWindow, pDesc->BufferDesc.Width, pDesc->BufferDesc.Height))
     {
         LOG_WARN("Overlay call!");
 
@@ -751,6 +811,15 @@ HRESULT DxgiFactoryHooks::CreateSwapChainForHwnd(IDXGIFactory2* realFactory, IUn
                                                  const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc,
                                                  IDXGIOutput* pRestrictToOutput, IDXGISwapChain1** ppSwapChain)
 {
+    if (IsAuxiliaryFactory(realFactory))
+    {
+        LOG_DEBUG("Auxiliary factory: preserving native swapchain");
+        ScopedSkipDxgiLoadChecks skipDxgiLoadChecks {};
+        ScopedSkipParentWrapping skipParentWrapping {};
+        return o_CreateSwapChainForHwnd(realFactory, pDevice, hWnd, pDesc, pFullscreenDesc,
+                                          pRestrictToOutput, ppSwapChain);
+    }
+
     *ppSwapChain = nullptr;
 
     static bool firstCall = static_cast<bool>(State::Instance().gameQuirks & GameQuirk::NoFSRFGFirstSwapchain);
@@ -797,7 +866,7 @@ HRESULT DxgiFactoryHooks::CreateSwapChainForHwnd(IDXGIFactory2* realFactory, IUn
         return result;
     }
 
-    if ((pDesc->Height != 0 && pDesc->Height < 100) || (pDesc->Width != 0 && pDesc->Width < 100))
+    if (IsTinyWindowSwapchain(hWnd, pDesc->Width, pDesc->Height))
     {
         LOG_WARN("Overlay call!");
         HRESULT result;
@@ -1161,6 +1230,14 @@ HRESULT DxgiFactoryHooks::CreateSwapChainForCoreWindow(IDXGIFactory2* realFactor
                                                        const DXGI_SWAP_CHAIN_DESC1* pDesc,
                                                        IDXGIOutput* pRestrictToOutput, IDXGISwapChain1** ppSwapChain)
 {
+    if (IsAuxiliaryFactory(realFactory))
+    {
+        LOG_DEBUG("Auxiliary factory: preserving native swapchain");
+        ScopedSkipDxgiLoadChecks skipDxgiLoadChecks {};
+        ScopedSkipParentWrapping skipParentWrapping {};
+        return o_CreateSwapChainForCoreWindow(realFactory, pDevice, pWindow, pDesc, pRestrictToOutput, ppSwapChain);
+    }
+
     if (State::Instance().vulkanCreatingSC)
     {
         LOG_WARN("Vulkan is creating swapchain!");
@@ -1274,6 +1351,14 @@ HRESULT DxgiFactoryHooks::CreateSwapChainForCoreWindow(IDXGIFactory2* realFactor
 HRESULT DxgiFactoryHooks::DLSSGCreateSwapChain(IDXGIFactory* realFactory, IUnknown* pDevice,
                                                DXGI_SWAP_CHAIN_DESC* pDesc, IDXGISwapChain** ppSwapChain)
 {
+    if (IsAuxiliaryFactory(realFactory))
+    {
+        LOG_DEBUG("Auxiliary factory: preserving native swapchain");
+        ScopedSkipDxgiLoadChecks skipDxgiLoadChecks {};
+        ScopedSkipParentWrapping skipParentWrapping {};
+        return o_DLSSGCreateSwapChain(realFactory, pDevice, pDesc, ppSwapChain);
+    }
+
     *ppSwapChain = nullptr;
 
     if (State::Instance().vulkanCreatingSC)
@@ -1303,8 +1388,7 @@ HRESULT DxgiFactoryHooks::DLSSGCreateSwapChain(IDXGIFactory* realFactory, IUnkno
         return res;
     }
 
-    if ((pDesc->BufferDesc.Height != 0 && pDesc->BufferDesc.Height < 100) ||
-        (pDesc->BufferDesc.Width != 0 && pDesc->BufferDesc.Width < 100))
+    if (IsTinyWindowSwapchain(pDesc->OutputWindow, pDesc->BufferDesc.Width, pDesc->BufferDesc.Height))
     {
         LOG_WARN("Overlay call!");
 
@@ -1552,6 +1636,15 @@ HRESULT DxgiFactoryHooks::DLSSGCreateSwapChainForHwnd(IDXGIFactory2* realFactory
                                                       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc,
                                                       IDXGIOutput* pRestrictToOutput, IDXGISwapChain1** ppSwapChain)
 {
+    if (IsAuxiliaryFactory(realFactory))
+    {
+        LOG_DEBUG("Auxiliary factory: preserving native swapchain");
+        ScopedSkipDxgiLoadChecks skipDxgiLoadChecks {};
+        ScopedSkipParentWrapping skipParentWrapping {};
+        return o_DLSSGCreateSwapChainForHwnd(realFactory, pDevice, hWnd, pDesc, pFullscreenDesc,
+                                               pRestrictToOutput, ppSwapChain);
+    }
+
     *ppSwapChain = nullptr;
 
     static bool firstCall = static_cast<bool>(State::Instance().gameQuirks & GameQuirk::NoFSRFGFirstSwapchain);
@@ -1598,7 +1691,7 @@ HRESULT DxgiFactoryHooks::DLSSGCreateSwapChainForHwnd(IDXGIFactory2* realFactory
         return result;
     }
 
-    if ((pDesc->Height != 0 && pDesc->Height < 100) || (pDesc->Width != 0 && pDesc->Width < 100))
+    if (IsTinyWindowSwapchain(hWnd, pDesc->Width, pDesc->Height))
     {
         LOG_WARN("Overlay call!");
         HRESULT result;
@@ -1874,6 +1967,14 @@ HRESULT DxgiFactoryHooks::DLSSGCreateSwapChainForCoreWindow(IDXGIFactory2* realF
                                                             IDXGIOutput* pRestrictToOutput,
                                                             IDXGISwapChain1** ppSwapChain)
 {
+    if (IsAuxiliaryFactory(realFactory))
+    {
+        LOG_DEBUG("Auxiliary factory: preserving native swapchain");
+        ScopedSkipDxgiLoadChecks skipDxgiLoadChecks {};
+        ScopedSkipParentWrapping skipParentWrapping {};
+        return o_DLSSGCreateSwapChainForCoreWindow(realFactory, pDevice, pWindow, pDesc, pRestrictToOutput, ppSwapChain);
+    }
+
     if (State::Instance().vulkanCreatingSC)
     {
         LOG_WARN("Vulkan is creating swapchain!");

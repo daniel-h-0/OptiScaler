@@ -72,6 +72,11 @@ DEFINE_NAME_VECTORS(blockOverlay, "eosovh-win32-shipping",
 
 inline std::vector<std::wstring> blockedDllNamesW = { L"windhawk.dll", L"mactype.dll", L"mactype64.dll", L"overlayenginex64.dll", L"overlayreleasex64.dll" };
 
+// Social Club owns an auxiliary D3D12 swapchain, not the game's FG output.
+// Keep this separate from skipDxgiWrapping: that list also contains DirectX
+// runtime callers and is broader than the verified auxiliary-factory policy.
+DEFINE_NAME_VECTORS(auxiliaryDxgiFactory, "socialclubd3d12renderer");
+
 DEFINE_NAME_VECTORS(skipDxgiWrapping, "eosovh-win32-shipping",
                                       "eosovh-win64-shipping",
                                       "gameoverlayrenderer",
