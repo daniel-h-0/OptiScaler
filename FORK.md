@@ -29,6 +29,21 @@ under ASan/UBSan. It checks 24 size cases and 13 marker/ownership cases, includi
 real D3D12 main/auxiliary swapchains and normal GTA Story Mode starts. Factory wrapping avoided the reproduced
 crash but stalled at initialization on the tested stack; it is not the remedy implemented here.
 
+## Required launch argument
+
+`[BC250] RequireArgument` in `OptiScaler.ini` names one launch argument without which OptiScaler must stay out of
+the process, such as GTA V Enhanced's `-nobattleye`, which starts Story Mode without BattlEye. When it is set and
+the process command line lacks that whole argument (split by the Microsoft C runtime's rules after the program
+name; ASCII letters compared case-insensitively), OptiScaler works as a plain pass-through proxy, exactly as for a
+process that `[ProcessFilter]` excludes: it loads the original DLL and forwards its exports, with no hooks, no
+plugins and no frame generation, and logs one line naming the argument. A value that is not one argument (blanks,
+quotes, control characters) has the same effect. Unset (`auto`, the default) or empty, the command line is not
+read and nothing changes. OptiScaler's own settings save keeps the key as it was loaded: the installer that wrote
+it owns it. The DLL itself stays loaded, so an anti-cheat that lists modules still sees it; nothing of it acts.
+
+`tools/test-required-argument.py` compiles the check (`misc/RequiredArgument.h`) and runs 46 checks, among them
+2,000 random command lines quoted by Python's `subprocess.list2cmdline` and split back.
+
 ## FreeFG 1.1.6 candidate
 
 The candidate merges upstream `e7e3872d410f704479d94d318d68d163b6b58947` (29 October 2026) into the accepted fork.

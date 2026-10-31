@@ -478,6 +478,9 @@ class Config
         L"exe|edcefcrashpadprocess.exe|edcefrenderprocess.exe|unicrashreporter.exe"
     };
 
+    // BC250: one launch argument the process command line must carry, else OptiScaler stays a plain proxy
+    CustomOptional<std::wstring, NoDefault> RequireArgument; // disabled by default
+
     // Hotfixes
     CustomOptional<bool> CheckForUpdate { true };
     CustomOptional<bool, SoftDefault> DisableOverlays { false };

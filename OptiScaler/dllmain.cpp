@@ -8,6 +8,7 @@
 #include "DllNames.h"
 #include "BuildInfo.h"
 #include "misc/GameConfigs.h"
+#include "misc/RequiredArgument.h"
 
 #include "proxies/Dxgi_Proxy.h"
 #include "proxies/Kernel32_Proxy.h"
@@ -1486,6 +1487,28 @@ void CheckForExcludedProcess()
     _passThruMode = false;
 }
 
+// [BC250] RequireArgument (misc/RequiredArgument.h): without that argument on the process command line OptiScaler
+// stays a plain proxy, as for an excluded process, and its log says why. Unset, the command line is not read.
+static void CheckRequiredArgument()
+{
+    const auto& required = Config::Instance()->RequireArgument;
+    const auto verdict = RequiredArgument::Check(required, [] { return std::wstring_view(GetCommandLineW()); });
+
+    if (verdict == RequiredArgument::Verdict::NotRequired || verdict == RequiredArgument::Verdict::Present)
+        return;
+
+    _passThruMode = true;
+
+    const auto setting = wstring_to_string(required.value());
+    PrepareLogger();
+    spdlog::warn("{} inactive in {}: {}, so it works only as a plain {} proxy, without hooks or frame generation",
+                 BuildInfo::ProductName(), wstring_to_string(Util::ExePath().filename().wstring()),
+                 verdict == RequiredArgument::Verdict::Missing
+                     ? std::format("the command line has no {} ([BC250] RequireArgument)", setting)
+                     : std::format("[BC250] RequireArgument={} is not one argument", setting),
+                 wstring_to_string(Util::DllPath().filename().wstring()));
+}
+
 void CheckMemoryForProxies()
 {
     FfxApiProxy::InitFfxDx12();
@@ -1587,6 +1610,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         }
 
         CheckForExcludedProcess();
+
+        if (!_passThruMode)
+            CheckRequiredArgument();
 
         if (_passThruMode)
         {

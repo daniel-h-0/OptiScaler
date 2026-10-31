@@ -1028,6 +1028,9 @@
     <ClInclude Include="misc\AuxiliaryModules.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="misc\RequiredArgument.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="inputs\FG\Upscaler_Inputs_Dx11wDx12.h">
       <Filter>Header Files</Filter>
     </ClInclude>

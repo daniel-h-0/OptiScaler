@@ -667,6 +667,11 @@ bool Config::Reload(std::filesystem::path iniPath)
             TargetProcess.set_from_config(readWString("ProcessFilter", "TargetProcessName", true));
         }
 
+        // BC250
+        {
+            RequireArgument.set_from_config(readWString("BC250", "RequireArgument"));
+        }
+
         // Hotfixes
         {
             CheckForUpdate.set_from_config(readBool("Hotfix", "CheckForUpdate"));
@@ -1849,6 +1854,8 @@ std::string Config::SerializeIni()
         ini.SetValue("ProcessFilter", "ProcessExclusionList",
                      wstring_to_string(Instance()->ProcessExclusionList.value_for_config_or(L"auto")).c_str());
     }
+
+    // [BC250] RequireArgument belongs to the installer that wrote it: saved as it was loaded, never rewritten here
 
     // Hotfixes
     {
