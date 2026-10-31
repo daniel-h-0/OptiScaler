@@ -12,7 +12,8 @@ Inputs, all from the environment or the command line (no paths are built in):
 
   --source DIR / OPTISCALER_SOURCE   the fork checkout with its submodules (default: the checkout holding this
                                      script). Its HEAD and local changes name the build: the DLL's version string
-                                     reads "<12-digit commit>-bc250-<first 8 hex of sha256(git diff --binary HEAD)>".
+                                     reads "<12-digit commit>-bc250" for a clean checkout and, with local changes,
+                                     "<12-digit commit>-bc250-<first 8 hex of sha256(git diff --binary HEAD)>".
   --out DIR / BC250_BUILD_OUT        output directory, outside the source (default: <source>-build)
   MSVC_ROOT                          an msvc-wine installation (https://github.com/mstorsjo/msvc-wine): INCLUDE and
                                      LIB are read from $MSVC_ROOT/bin/x64/msvcenv.sh, as msvc-wine's
@@ -26,7 +27,8 @@ Options: --jobs N (default 2), --configure-only (write build.ninja and commands.
 
 Outputs in the output directory: OptiScaler.dll, build.ninja, commands.json (every command line),
 sdk-vfs.json (case-insensitive header overlay), generated/ (version headers, UTF-8 resource script) and
-bc250-build-record.json (source commit, version label, toolchain versions, DLL sha256; no absolute paths).
+bc250-build-record.json (source commit, version label, whether the checkout had local changes, toolchain versions,
+DLL sha256; no absolute paths).
 """
 import argparse
 import hashlib
@@ -34,6 +36,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -84,6 +87,32 @@ def tool_version(command):
     return lines[0] if lines else 'unknown'
 
 
+def llvm_rc_version(command):
+    """llvm-rc has no version option: it takes --version for an input file name. The same program started under
+    the name llvm-windres (llvm-rc picks its mode from argv[0]) answers --version with its LLVM version."""
+    path = shutil.which(command)
+    if path is None:
+        return 'unavailable (not found)'
+    try:
+        out = subprocess.run(['llvm-windres', '--version'], executable=path, capture_output=True, text=True,
+                             timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f'unavailable ({error.__class__.__name__})'
+    match = re.search(r'LLVM version (\S+)', out.stdout + out.stderr)
+    return 'LLVM version ' + match[1] if match else 'unknown'
+
+
+def source_label(source):
+    """(commit, version label, local changes as `git diff --binary HEAD`, their sha256 or None when there are none).
+    The label is the 12-digit commit plus "-bc250", and the changes' first 8 hex digits only when there are any:
+    builds before this rule appended e3b0c442, the sha256 of no input, to a clean checkout's label too."""
+    commit = git(source, 'rev-parse', 'HEAD')
+    revision = git(source, 'rev-parse', '--short=12', 'HEAD')
+    patch = git(source, 'diff', '--binary', 'HEAD', binary=True)
+    patch_sha256 = hashlib.sha256(patch).hexdigest() if patch else None
+    return commit, revision + '-bc250' + ('-' + patch_sha256[:8] if patch else ''), patch, patch_sha256
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     p.add_argument('--source', default=os.environ.get('OPTISCALER_SOURCE'))
@@ -110,12 +139,7 @@ def main():
              [('clang-cl', 'CLANG_CL', 'clang-cl'), ('lld-link', 'LLD_LINK', 'lld-link'),
               ('llvm-rc', 'LLVM_RC', 'llvm-rc'), ('ninja', 'NINJA', 'ninja')]}
 
-    # Version label, exactly as the reference build computed it
-    commit = git(source, 'rev-parse', 'HEAD')
-    revision = git(source, 'rev-parse', '--short=12', 'HEAD')
-    patch = git(source, 'diff', '--binary', 'HEAD', binary=True)
-    patch_sha256 = hashlib.sha256(patch).hexdigest()
-    label = revision + '-bc250-' + patch_sha256[:8]
+    commit, label, patch, patch_sha256 = source_label(source)
     untracked = [line[3:] for line in git(source, 'status', '--porcelain', '--untracked-files=normal').splitlines()
                  if line.startswith('?? ')]
     generated_files = []
@@ -280,9 +304,10 @@ def main():
     sdk_version = re.search(r'/include/(10\.\d+\.\d+\.\d+)/', version_dirs, re.I)
     record = dict(
         dll='OptiScaler.dll', dll_sha256=digest, dll_bytes=dll.stat().st_size,
-        source_commit=commit, version_label=label, source_patch_sha256=patch_sha256,
+        source_commit=commit, version_label=label, dirty=bool(patch), source_patch_sha256=patch_sha256,
         untracked_source_paths=untracked,
-        toolchain={name: tool_version(command) for name, command in tools.items()},
+        toolchain={name: llvm_rc_version(command) if name == 'llvm-rc' else tool_version(command)
+                   for name, command in tools.items()},
         msvc_version=msvc_version.group(1) if msvc_version else None,
         windows_sdk_version=sdk_version.group(1) if sdk_version else None,
         expected_sha256=a.expect_sha256, matches_expected=(digest == a.expect_sha256.lower()) if a.expect_sha256 else None)

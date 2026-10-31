@@ -199,13 +199,17 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ```
 
 - The DLL is `../optiscaler-build/OptiScaler.dll`; `bc250-build-record.json` beside it has its sha256, the source
-  commit, the version label and the tool versions. `llvm-rc` has no `--version` option, so its entry there holds
-  llvm-rc's usage message instead; it comes from the same LLVM release as `clang-cl`.
+  commit, the version label, `dirty` (whether the checkout had local changes) and the tool versions. `llvm-rc` has
+  no `--version` option, so the script starts it under the name `llvm-windres`, which reports its LLVM version.
+  Records up to `273e8d44` hold llvm-rc's usage message there instead.
 - The output directory must be outside the checkout.
 - Instead of `MSVC_ROOT`, `MSVC_INCLUDE` and `MSVC_LIB` can name the header and library directories; `CLANG_CL`,
   `LLD_LINK`, `LLVM_RC` and `NINJA` can name the tools.
-- The version string names the checkout's HEAD commit and a hash of its local changes (`git diff --binary HEAD`), so a
-  build of this commit, rather than of the build commit named above, has a different version string and a different sha256.
+- The version string names the checkout's HEAD commit, followed by the first 8 hex digits of the sha256 of its local
+  changes (`git diff --binary HEAD`) when there are any. Builds up to `273e8d44` appended a digest to a clean
+  checkout's label too: `e3b0c442`, the sha256 of no input; their tags keep the script that made them. A build of
+  this commit, rather than of the build commit named above, has a different version string and a different sha256.
+- `python3 tools/test-build-record.py` checks the label and the llvm-rc probe (no build).
 - Build from a checkout with Unix line endings (git's default on Linux). A checkout with `core.autocrlf=true` changes
   the sources' bytes and can change the DLL.
 - The reference build took about six minutes with four jobs.
