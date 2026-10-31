@@ -4,8 +4,9 @@
 
 Checks zero-axis resolution, explicit-axis precedence, the existing 100-pixel
 boundary, unknown windows, empty client axes and minimized windows (both
-unknown, so a game window created minimized keeps FG), and per-factory marker
-ownership. The GPU probe separately exercises DXGI.
+unknown, so a game window created minimized keeps FG), per-factory marker
+ownership, and that the marker's distinct-object assumption is logged once.
+The GPU probe separately exercises DXGI.
 """
 import argparse
 import os
@@ -24,9 +25,12 @@ def main():
     guard = source[start:end]
     factory = source[source.index('static const GUID AuxiliaryFactoryMarker'):source.index('\n#ifdef DETAILED_SC_LOGS')]
     harness = r'''
+#include <atomic>
 #include <cstdio>
 #include <cstring>
+static int infoLogs = 0;
 #define LOG_DEBUG(...) ((void)0)
+#define LOG_INFO(...) (++infoLogs)
 #define LOG_WARN(...) ((void)0)
 using HRESULT = int;
 #define FAILED(hr) ((hr) < 0)
@@ -117,27 +121,31 @@ int main() {
     }
     std::printf("%zu auxiliary-window size cases: %s\n", sizeof(cases) / sizeof(cases[0]), failures ? "FAIL" : "PASS");
     const int sizeFailures = failures;
-    IDXGIFactory overlay, game, failedQuery, failedWrite, malformed;
+    IDXGIFactory overlay, second, game, failedQuery, failedWrite, malformed;
     CHECK(!IsAuxiliaryFactory(nullptr));
     CHECK(!IsAuxiliaryFactory(&overlay));
     DxgiFactoryHooks::MarkAuxiliaryFactory(nullptr);
-    DxgiFactoryHooks::MarkAuxiliaryFactory(&overlay);
-    CHECK(IsAuxiliaryFactory(&overlay));
-    CHECK(overlay.refs == 1);
-    CHECK(!IsAuxiliaryFactory(&game));
-    DxgiFactoryHooks::MarkAuxiliaryFactory(&overlay);
-    CHECK(overlay.refs == 1);
     failedQuery.queryFails = true;
     DxgiFactoryHooks::MarkAuxiliaryFactory(&failedQuery);
     CHECK(!IsAuxiliaryFactory(&failedQuery) && failedQuery.refs == 1);
     failedWrite.writeFails = true;
     DxgiFactoryHooks::MarkAuxiliaryFactory(&failedWrite);
     CHECK(!IsAuxiliaryFactory(&failedWrite) && failedWrite.refs == 1);
+    CHECK(infoLogs == 0); // the distinct-object assumption is logged at the first factory actually marked
+    DxgiFactoryHooks::MarkAuxiliaryFactory(&overlay);
+    CHECK(IsAuxiliaryFactory(&overlay));
+    CHECK(overlay.refs == 1);
+    CHECK(infoLogs == 1);
+    CHECK(!IsAuxiliaryFactory(&game));
+    DxgiFactoryHooks::MarkAuxiliaryFactory(&overlay);
+    CHECK(overlay.refs == 1);
+    DxgiFactoryHooks::MarkAuxiliaryFactory(&second);
+    CHECK(IsAuxiliaryFactory(&second) && infoLogs == 1); // once per process
     malformed.length = 2; malformed.value = 1;
     CHECK(!IsAuxiliaryFactory(&malformed));
     malformed.length = sizeof(UINT); malformed.value = 2;
     CHECK(!IsAuxiliaryFactory(&malformed));
-    std::printf("10 factory-marker checks: %s\n", failures > sizeFailures ? "FAIL" : "PASS");
+    std::printf("13 factory-marker checks: %s\n", failures > sizeFailures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 }
 '''.replace('@GUARD@', guard).replace('@FACTORY@', factory)

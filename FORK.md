@@ -16,8 +16,16 @@ a minimized window leaves that axis unknown, as a zero descriptor axis always wa
 window that is minimized or not yet mapped says nothing about the size the game renders at, so a game that
 creates its swapchain then keeps FG instead of being taken for an overlay for the whole session.
 
+The modules are `[Hotfix] AuxiliaryDxgiFactoryModules` in `OptiScaler.ini`: DLL file names separated by `|`,
+compared whole and case-insensitively; a list replaces the default `SocialClubD3D12Renderer.dll`. The parser
+(`misc/AuxiliaryModules.h`) is strict, because an entry matching too much (a pattern, a path, part of a name, the
+game's executable) would keep the game's own swapchain out of FG without a sign: a malformed list is logged and
+the default kept. The marker assumes that every `CreateDXGIFactory*` call returns a distinct factory; a factory
+shared with the game would keep the game's swapchains native too, so the first marked factory logs that assumption.
+
 `tools/test-window-swapchain-size.py` compiles the actual guard and marker helpers with controlled API results
-under ASan/UBSan. It checks 24 size cases and ten marker/ownership cases. Runtime qualification additionally uses
+under ASan/UBSan. It checks 24 size cases and 13 marker/ownership cases, including the single assumption line.
+`tools/test-auxiliary-modules.py` compiles the list parser and runs 41 checks. Runtime qualification additionally uses
 real D3D12 main/auxiliary swapchains and normal GTA Story Mode starts. Factory wrapping avoided the reproduced
 crash but stalled at initialization on the tested stack; it is not the remedy implemented here.
 

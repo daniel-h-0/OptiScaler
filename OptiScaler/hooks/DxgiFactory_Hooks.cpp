@@ -36,7 +36,17 @@ void DxgiFactoryHooks::MarkAuxiliaryFactory(IUnknown* factory)
     const HRESULT result = object->SetPrivateData(AuxiliaryFactoryMarker, sizeof(marker), &marker);
     object->Release();
     if (FAILED(result))
+    {
         LOG_WARN("Could not mark auxiliary DXGI factory: {:X}", (UINT) result);
+        return;
+    }
+
+    // The marker belongs to the object: if DXGI handed the same factory to the game, its swapchains would stay
+    // native too ("Auxiliary factory: preserving native swapchain" for the game's window, and no FG)
+    static std::atomic<bool> assumptionLogged = false;
+    if (!assumptionLogged.exchange(true))
+        LOG_INFO("Auxiliary factories are marked per object: this assumes every CreateDXGIFactory call returns "
+                 "a distinct factory");
 }
 
 static bool IsAuxiliaryFactory(IDXGIFactory* factory)

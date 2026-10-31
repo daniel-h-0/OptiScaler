@@ -9,6 +9,7 @@
 #include <wrapped/wrapped_factory.h>
 
 #include <DllNames.h>
+#include <misc/AuxiliaryModules.h>
 #include <misc/IdentifyGpu.h>
 #include <with_dx12/with_dx12.h>
 
@@ -85,6 +86,27 @@ static void CheckLumaAndReShade(IDXGIFactory* factory)
     }
 }
 
+// Callers whose factories keep native swapchains: [Hotfix] AuxiliaryDxgiFactoryModules (misc/AuxiliaryModules.h)
+static std::vector<std::string> AuxiliaryCallers()
+{
+    std::optional<std::string> rejected;
+    auto modules =
+        AuxiliaryModules::Resolve(Config::Instance()->AuxiliaryDxgiFactoryModules.value_for_config(), rejected);
+
+    if (rejected.has_value())
+        LOG_WARN("[Hotfix] AuxiliaryDxgiFactoryModules entry \"{}\" is not a DLL file name, using {}", rejected.value(),
+                 AuxiliaryModules::Default);
+
+    return modules;
+}
+
+// Resolved once, at the first factory, when the configuration and the log are ready
+static bool IsAuxiliaryCaller(const std::string& caller)
+{
+    static const std::vector<std::string> modules = AuxiliaryCallers();
+    return AuxiliaryModules::Contains(modules, caller);
+}
+
 VALIDATE_HOOK(hkCreateDXGIFactory, DxgiProxy::PFN_CreateDxgiFactory)
 inline static HRESULT hkCreateDXGIFactory(REFIID riid, IDXGIFactory** ppFactory)
 {
@@ -97,7 +119,7 @@ inline static HRESULT hkCreateDXGIFactory(REFIID riid, IDXGIFactory** ppFactory)
         return o_CreateDXGIFactory(riid, ppFactory);
     }
 
-    if (CheckDllName(&caller, &auxiliaryDxgiFactoryNames))
+    if (IsAuxiliaryCaller(caller))
     {
         const HRESULT result = o_CreateDXGIFactory(riid, ppFactory);
         if (SUCCEEDED(result) && ppFactory != nullptr && *ppFactory != nullptr)
@@ -171,7 +193,7 @@ inline static HRESULT hkCreateDXGIFactory1(REFIID riid, IDXGIFactory1** ppFactor
         return o_CreateDXGIFactory1(riid, ppFactory);
     }
 
-    if (CheckDllName(&caller, &auxiliaryDxgiFactoryNames))
+    if (IsAuxiliaryCaller(caller))
     {
         const HRESULT result = o_CreateDXGIFactory1(riid, ppFactory);
         if (SUCCEEDED(result) && ppFactory != nullptr && *ppFactory != nullptr)
@@ -245,7 +267,7 @@ inline static HRESULT hkCreateDXGIFactory2(UINT Flags, REFIID riid, IDXGIFactory
         return o_CreateDXGIFactory2(Flags, riid, ppFactory);
     }
 
-    if (CheckDllName(&caller, &auxiliaryDxgiFactoryNames))
+    if (IsAuxiliaryCaller(caller))
     {
         const HRESULT result = o_CreateDXGIFactory2(Flags, riid, ppFactory);
         if (SUCCEEDED(result) && ppFactory != nullptr && *ppFactory != nullptr)
