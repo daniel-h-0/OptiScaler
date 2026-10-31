@@ -11,10 +11,13 @@ Factories created by `SocialClubD3D12Renderer.dll` now carry a private DXGI mark
 swapchain hooks pass marked factories through unchanged, before changing the game's FG state. DXGI owns the
 marker with its factory, so there is no stale-pointer registry to maintain. The policy does not enable factory
 wrapping, disable the Social Club renderer, or change other callers' factories. The separate existing size guard
-also resolves zero axes from the output window without rewriting the caller's descriptor.
+also resolves zero axes from the output window without rewriting the caller's descriptor. An empty client axis or
+a minimized window leaves that axis unknown, as a zero descriptor axis always was: the empty client area of a
+window that is minimized or not yet mapped says nothing about the size the game renders at, so a game that
+creates its swapchain then keeps FG instead of being taken for an overlay for the whole session.
 
 `tools/test-window-swapchain-size.py` compiles the actual guard and marker helpers with controlled API results
-under ASan/UBSan. It checks 16 size cases and ten marker/ownership cases. Runtime qualification additionally uses
+under ASan/UBSan. It checks 24 size cases and ten marker/ownership cases. Runtime qualification additionally uses
 real D3D12 main/auxiliary swapchains and normal GTA Story Mode starts. Factory wrapping avoided the reproduced
 crash but stalled at initialization on the tested stack; it is not the remedy implemented here.
 

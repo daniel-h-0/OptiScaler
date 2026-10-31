@@ -426,21 +426,24 @@ void DxgiFactoryHooks::HookToDLSSGFactory(IDXGIFactory* pFactory)
 // DXGI resolves zero descriptor dimensions from the HWND. Test the same
 // effective size before letting an auxiliary window replace the FG swapchain.
 // Keep the caller's descriptor untouched for the original DXGI implementation.
+// A minimized or not yet mapped window has an empty client area that says
+// nothing about the swapchain's size: such an axis stays unknown, as a zero
+// descriptor axis always did, so a game window created minimized keeps FG.
 static bool IsTinyWindowSwapchain(HWND window, UINT width, UINT height)
 {
     bool widthKnown = width != 0;
     bool heightKnown = height != 0;
     RECT client {};
-    if ((!widthKnown || !heightKnown) && window != nullptr && GetClientRect(window, &client))
+    if ((!widthKnown || !heightKnown) && window != nullptr && !IsIconic(window) && GetClientRect(window, &client))
     {
-        if (!widthKnown)
+        if (!widthKnown && client.right > client.left)
         {
-            width = client.right > client.left ? static_cast<UINT>(client.right - client.left) : 0;
+            width = static_cast<UINT>(client.right - client.left);
             widthKnown = true;
         }
-        if (!heightKnown)
+        if (!heightKnown && client.bottom > client.top)
         {
-            height = client.bottom > client.top ? static_cast<UINT>(client.bottom - client.top) : 0;
+            height = static_cast<UINT>(client.bottom - client.top);
             heightKnown = true;
         }
         LOG_DEBUG("Window {:X}: resolved swapchain size {}x{}", (size_t) window, width, height);

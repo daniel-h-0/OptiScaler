@@ -3,7 +3,9 @@
 """Compile the actual auxiliary-window guard against controlled HWND queries.
 
 Checks zero-axis resolution, explicit-axis precedence, the existing 100-pixel
-boundary, unknown/empty windows, and per-factory marker ownership. The GPU probe separately exercises DXGI.
+boundary, unknown windows, empty client axes and minimized windows (both
+unknown, so a game window created minimized keeps FG), and per-factory marker
+ownership. The GPU probe separately exercises DXGI.
 """
 import argparse
 import os
@@ -33,14 +35,15 @@ using HRESULT = int;
 struct GUID { unsigned int a; unsigned short b, c; unsigned char d[8]; };
 using UINT = unsigned int;
 struct RECT { long left, top, right, bottom; };
-struct Window { bool valid; RECT client; };
+struct Window { bool valid; RECT client; bool iconic = false; };
 using HWND = Window*;
-static int queries = 0;
+static int queries = 0, iconicQueries = 0;
 static bool GetClientRect(HWND window, RECT* rect) {
     ++queries;
     if (!window || !window->valid) return false;
     *rect = window->client; return true;
 }
+static bool IsIconic(HWND window) { ++iconicQueries; return window && window->valid && window->iconic; }
 struct IDXGIFactory {
     unsigned int value = 0, length = 0;
     int refs = 1;
@@ -70,7 +73,11 @@ int main() {
     Window normal {true, {0, 0, 1280, 720}};
     Window boundary {true, {0, 0, 100, 100}};
     Window empty {true, {0, 0, 0, 0}};
+    Window emptyWidth {true, {0, 0, 0, 66}};
+    Window emptyHeight {true, {0, 0, 1280, 0}};
+    Window minimized {true, {0, 0, 111, 66}, true};
     Window invalid {false, {0, 0, 1, 1}};
+    // queries: GetClientRect calls; the window is asked IsIconic first whenever an axis is unresolved.
     struct Case { const char* name; HWND w; UINT width, height; bool tiny; int queries; };
     Case cases[] = {
         {"explicit tiny", &normal, 111, 66, true, 0},
@@ -83,7 +90,15 @@ int main() {
         {"explicit boundary", &tiny, 100, 100, false, 0},
         {"below boundary", &normal, 99, 100, true, 0},
         {"resolved boundary", &boundary, 0, 0, false, 1},
-        {"empty client", &empty, 0, 0, true, 1},
+        {"empty client", &empty, 0, 0, false, 1},
+        {"empty client with explicit tiny width", &empty, 66, 0, true, 1},
+        {"empty client with explicit normal height", &empty, 0, 720, false, 1},
+        {"empty client width with tiny height", &emptyWidth, 0, 0, true, 1},
+        {"empty client height with normal width", &emptyHeight, 0, 0, false, 1},
+        {"empty client height with explicit tiny height", &emptyHeight, 0, 66, true, 1},
+        {"minimized window", &minimized, 0, 0, false, 0},
+        {"minimized with explicit tiny width", &minimized, 66, 0, true, 0},
+        {"minimized with explicit normal axes", &minimized, 1280, 720, false, 0},
         {"unknown window", nullptr, 0, 0, false, 0},
         {"unknown with known small axis", nullptr, 0, 66, true, 0},
         {"failed query", &invalid, 0, 0, false, 1},
@@ -92,14 +107,16 @@ int main() {
     };
     int failures = 0;
     for (auto test : cases) {
-        queries = 0;
+        queries = iconicQueries = 0;
         bool actual = IsTinyWindowSwapchain(test.w, test.width, test.height);
-        if (actual != test.tiny || queries != test.queries) {
-            std::printf("FAIL %s: tiny=%d queries=%d\n", test.name, actual, queries);
+        int iconic = test.w && (!test.width || !test.height) ? 1 : 0;
+        if (actual != test.tiny || queries != test.queries || iconicQueries != iconic) {
+            std::printf("FAIL %s: tiny=%d queries=%d iconic=%d\n", test.name, actual, queries, iconicQueries);
             ++failures;
         }
     }
-    std::printf("16 auxiliary-window size cases: %s\n", failures ? "FAIL" : "PASS");
+    std::printf("%zu auxiliary-window size cases: %s\n", sizeof(cases) / sizeof(cases[0]), failures ? "FAIL" : "PASS");
+    const int sizeFailures = failures;
     IDXGIFactory overlay, game, failedQuery, failedWrite, malformed;
     CHECK(!IsAuxiliaryFactory(nullptr));
     CHECK(!IsAuxiliaryFactory(&overlay));
@@ -120,7 +137,7 @@ int main() {
     CHECK(!IsAuxiliaryFactory(&malformed));
     malformed.length = sizeof(UINT); malformed.value = 2;
     CHECK(!IsAuxiliaryFactory(&malformed));
-    std::printf("10 factory-marker checks: %s\n", failures ? "FAIL" : "PASS");
+    std::printf("10 factory-marker checks: %s\n", failures > sizeFailures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 }
 '''.replace('@GUARD@', guard).replace('@FACTORY@', factory)
