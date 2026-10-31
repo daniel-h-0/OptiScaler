@@ -44,6 +44,20 @@ it owns it. The DLL itself stays loaded, so an anti-cheat that lists modules sti
 `tools/test-required-argument.py` compiles the check (`misc/RequiredArgument.h`) and runs 46 checks, among them
 2,000 random command lines quoted by Python's `subprocess.list2cmdline` and split back.
 
+## Candidate build of 30 October 2026
+
+A candidate with the changes above (minimized windows, configurable auxiliary modules, required launch argument,
+build record). It is not yet qualified on the GPU; FreeFG still pins `273e8d44` (`044cac6b…`).
+
+| | |
+| --- | --- |
+| File | `OptiScaler.dll`, 29,409,280 bytes |
+| sha256 | `e82bb9908ba81cdc9fc909f8e2d4eefa3481f6e73a3371b13ced986f2742a87b` |
+| Version string | `OptiScaler v10.0.0-dev (ba0dedb46818-bc250) (BC250 private)` |
+| Source | commit `ba0dedb4681875a1a0b88a35385d5aeb91db4063`, clean (`dirty: false`); the commit adding this record changes no source |
+| Default INI | `OptiScaler.ini`, sha256 `060d8fcfb1374f69dfbe4df6b22fed30d6349b97e9b5f6272cad9f494c440cb8`: two keys more than `273e8d44`'s, `Hotfix.AuxiliaryDxgiFactoryModules` and `BC250.RequireArgument` |
+| Built | 30 October 2026, Linux, `tools/bc250-build.py --jobs 4`: clang-cl, lld-link and llvm-rc 23.1.4, ninja 1.13.2, MSVC 14.44.35207, SDK 10.0.26100.0 |
+
 ## FreeFG 1.1.6 candidate
 
 The candidate merges upstream `e7e3872d410f704479d94d318d68d163b6b58947` (29 October 2026) into the accepted fork.
