@@ -80,6 +80,15 @@ def main():
         if shutil.which('llvm-rc'):
             check(build.llvm_rc_version('llvm-rc').startswith('LLVM version '), 'installed llvm-rc reports a version')
 
+    check(build.compile_source('upscalers/dlss/DLSSFeature_Dx12.cpp') == 'upscalers/dlss/DLSSFeature_Dx12.cpp',
+          'a source file is compiled by its path inside the project (the DLL must not depend on the checkout folder)')
+    for bad in ['/abs/a.cpp', '../a.cpp']:
+        try:
+            build.compile_source(bad)
+            check(False, 'refuses ' + bad)
+        except AssertionError:
+            check(True, 'refuses ' + bad)
+
     print(f'{checks} build-record checks: {"FAIL" if failures else "PASS"}')
     raise SystemExit(1 if failures else 0)
 

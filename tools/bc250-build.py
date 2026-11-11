@@ -113,6 +113,20 @@ def source_label(source):
     return commit, revision + '-bc250' + ('-' + patch_sha256[:8] if patch else ''), patch, patch_sha256
 
 
+SOURCE_SUFFIXES = ('.c', '.cc', '.cpp', '.cxx')
+
+
+def compile_source(relative):
+    """The source file as the compiler is given it: relative to the project folder, where ninja runs.
+
+    clang-cl names everything in an anonymous namespace after a hash of this path as written (?A0x........ in the
+    mangled names, which the DLL keeps). An absolute path would make OptiScaler.dll depend on where the checkout is.
+    The header overlay must not rename the file either: its entries for source files carry use-external-name false.
+    """
+    assert not os.path.isabs(relative) and '..' not in Path(relative).parts, relative
+    return relative
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     p.add_argument('--source', default=os.environ.get('OPTISCALER_SOURCE'))
@@ -158,7 +172,9 @@ def main():
 
     # Windows looks headers up case-insensitively: a clang VFS overlay of every header directory and the source
     # (without .git) maps any spelling to the real file, so neither the SDK nor the source needs editing.
-    def directory(path):
+    # A file the compiler is given directly keeps the name it was given (see compile_source); every other file is
+    # reported by its real path, which the dependency files need.
+    def directory(path, named_as_given=False):
         contents = []
         seen = {}
         for child in sorted(path.iterdir()):
@@ -171,12 +187,15 @@ def main():
                 continue
             seen[folded] = child
             if child.is_dir():
-                contents.append(dict(type='directory', name=child.name, contents=directory(child)))
+                contents.append(dict(type='directory', name=child.name, contents=directory(child, named_as_given)))
             elif child.is_file():
-                contents.append(dict(type='file', name=child.name, **{'external-contents': str(child)}))
+                entry = dict(type='file', name=child.name, **{'external-contents': str(child)})
+                if named_as_given and child.suffix.lower() in SOURCE_SUFFIXES:
+                    entry['use-external-name'] = False
+                contents.append(entry)
         return contents
 
-    roots = [dict(type='directory', name=v, contents=directory(Path(v)))
+    roots = [dict(type='directory', name=v, contents=directory(Path(v), v == str(source)))
              for v in [*include_dirs, str(source)] if Path(v).is_dir()]
     overlay = out / 'sdk-vfs.json'
     overlay_text = json.dumps(dict(version=0, **{'case-sensitive': False, 'roots': roots})) + '\n'
@@ -241,7 +260,8 @@ def main():
         mode = next((v.text for v in item.findall('m:PrecompiledHeader', NS) if v.attrib.get('Condition') == CONDITION),
                     'Use')
         is_c = f.suffix.lower() == '.c'
-        cmd = base + ['/c', str(f), '/Fo' + str(target), '/clang:-MD', '/clang:-MF', '/clang:' + str(target) + '.d']
+        cmd = base + ['/c', compile_source(relative), '/Fo' + str(target), '/clang:-MD', '/clang:-MF',
+               '/clang:' + str(target) + '.d']
         dependencies = []
         if mode == 'Create':
             cmd += ['/Ycpch.h', '/Fp' + str(pch)]
