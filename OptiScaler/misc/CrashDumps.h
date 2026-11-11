@@ -18,13 +18,14 @@ class CrashDumps
     typedef NTSTATUS(NTAPI* PFN_NtTerminateProcess)(HANDLE ProcessHandle, NTSTATUS ExitStatus);
 
     // Static, the dumper can outlive the wait of the thread that asked for it
+    // (no default member initializers: clang-cl refuses them for the static member below; {} zeroes every member)
     struct DumpRequest
     {
-        const wchar_t* kind = nullptr;
-        DWORD code = 0;
-        DWORD threadId = 0;
-        EXCEPTION_POINTERS* exception = nullptr;
-        BOOL written = FALSE;
+        const wchar_t* kind;
+        DWORD code;
+        DWORD threadId;
+        EXCEPTION_POINTERS* exception;
+        BOOL written;
     };
 
     // First chance exceptions can be handled by the game, a few dumps are enough
