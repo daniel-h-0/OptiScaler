@@ -1,5 +1,42 @@
 # BC-250 fork of OptiScaler
 
+## Build of 11 November 2026
+
+This build merges upstream master `7479cb294cd66d4d02c2a452f6f6294ade6a11ff` of 11 November 2026 into the fork (the
+previous base was `e7e3872d` of 29 October; 127 upstream commits). That is the commit of the official
+`nightly-20261111` DLL, `2a40e206`, and the three commits after it: ASI plugins load in `DllMain` again (`559fca7e`,
+as in every build FreeFG qualified with MFG Unlocker), an upscaler in place of DLSSD in select games (`9e9a7190`) and
+XeFG dispatch starting from the current frame (`4a7795ae`). The FidelityFX files of upstream's nightly archive are
+now AMD's FSR SDK 2.4.0.
+
+Four files conflicted. `Config.h` keeps the fork's auto-save declarations beside upstream's raw plugin values,
+`dllmain.cpp` both includes, `ll_xell.h` the fork's frame-start multiplier setter. In `DxgiFactory_Hooks.cpp` the four
+frame-generation swapchain paths keep the fork's guard (`IsTinyWindowSwapchain`, tested by
+`tools/test-window-swapchain-size.py`), which leaves a minimized window unmeasured. Upstream added its own
+`Util::IsOverlaySwapchain` since: it also leaves an empty client axis unknown, and serves upstream's other callers.
+
+Three commits follow the merge:
+
+- `d4723808` The HLX DLSS input contract (below) applies to every custom NGX provider whose folder name starts with
+  `hlx-dlss`. HelixSR 3.3.0 adds Preset K as a second NGX runtime, which FreeFG places in `custom/hlx-dlss-k/dlss`;
+  HelixSR Scaler 2.3.0 sets the same two parameters for Model E and Preset K.
+- `c6c86809` `misc/CrashDumps.h` (new upstream): the nested `DumpRequest` loses its default member initializers,
+  which clang-cl refuses beside a static member of that type in the same class. `{}` still zeroes every member.
+- `4d0c0b97` `tools/bc250-build.py` builds the same DLL from any checkout folder (see "Reproducing this build").
+
+| | |
+| --- | --- |
+| File | `OptiScaler.dll`, 29,711,872 bytes |
+| sha256 | `22052eb2b4f9b936f9c6ee2bfa161a3dc9cdb6799f801c1999595fc765d579c3` |
+| Version string | `OptiScaler v10.0.0-dev (4d0c0b9798e0-bc250) (BC250 private)` |
+| Source | commit `4d0c0b9798e07332a0a8a86a7dfa5b0388732957` (tree `46b05fbb62d92373c13194d6567251a908069b2c`), clean (`dirty: false`); the commit adding this record changes no source |
+| Default INI | `OptiScaler.ini`, sha256 `7c47167e814469dd887354191786f908c5b8d78de92d384b3e7e3814ac97ccc8`: upstream's new keys (among them `RRUpscaler`, `RRAllowRegularUpscalers`, `HudlessFlip`, `CreateDumps`, `VulkanPresentMode`) and the fork's |
+| Built | 11 November 2026, Linux, `tools/bc250-build.py --jobs 8`: clang-cl, lld-link and llvm-rc 23.1.4, ninja 1.13.2, MSVC 14.44.35207, SDK 10.0.26100.0 |
+
+The fork's unit checks pass on this source: 27 library-path combinations, 41 auxiliary-module checks, 46
+required-argument checks, 24 window-size cases with 13 factory-marker checks, 13 build-record checks and the
+frame-start controller test. FreeFG's measurements document records the game starts.
+
 ## Social Club auxiliary swapchains
 
 Social Club's D3D12 renderer creates its own swapchain in GTA V Enhanced. Passing that auxiliary swapchain to
@@ -46,8 +83,8 @@ it owns it. The DLL itself stays loaded, so an anti-cheat that lists modules sti
 
 ## Candidate build of 30 October 2026
 
-A candidate with the changes above (minimized windows, configurable auxiliary modules, required launch argument,
-build record). It is not yet qualified on the GPU; FreeFG still pins `273e8d44` (`044cac6b…`).
+The build with the changes above (minimized windows, configurable auxiliary modules, required launch argument,
+build record). FreeFG 1.3.0 shipped it (release `bc250-ba0dedb`).
 
 | | |
 | --- | --- |
@@ -182,8 +219,8 @@ option.
 
 You need:
 - Linux x86-64 with git, Python 3.9 or later and ninja.
-- LLVM's `clang-cl`, `lld-link` and `llvm-rc`: LLVM 23.1.3 for this candidate, and ninja 1.13.2. The previous
-  `f971ed14` build used LLVM 22.1.8; the candidate's build record records the current compiler.
+- LLVM's `clang-cl`, `lld-link` and `llvm-rc`: LLVM 23.1.4 for the 11 November build (23.1.3 for the 25 October
+  one, 22.1.8 for `f971ed14`), and ninja 1.13.2. Each build record names its compiler.
 - The MSVC 14.44 headers and libraries, ATL and the Windows SDK 10.0.26100, installed with
   [msvc-wine](https://github.com/mstorsjo/msvc-wine). Downloading them means accepting Microsoft's licence terms.
   The reference installation: msvc-wine commit `514f8ea34842cd6d831804d0e9658d3a32870ae1`, the Visual Studio
@@ -234,28 +271,34 @@ MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../optiscaler-build -
 ```sh
 git clone https://github.com/daniel-h-0/OptiScaler optiscaler-bc250
 cd optiscaler-bc250
-git checkout bc250-03db4f8                  # this file and tools/
-cp tools/bc250-build.py ../bc250-build.py
-git checkout --detach 03db4f8692878e65748769ebe583c053cae96360
+git checkout --detach 4d0c0b9798e07332a0a8a86a7dfa5b0388732957
 git submodule update --init
 git status --porcelain                      # must print nothing
-MSVC_ROOT=/path/to/msvc python3 ../bc250-build.py --out ../build-b3602882 --jobs 8 \
-  --expect-sha256 b3602882c7e194af523e50861a222d63c0c56b013cff4bfb5b187ca4f6666656
+MSVC_ROOT=/path/to/msvc python3 tools/bc250-build.py --out ../build-22052eb2 --jobs 8 \
+  --expect-sha256 22052eb2b4f9b936f9c6ee2bfa161a3dc9cdb6799f801c1999595fc765d579c3
 ```
 
-The candidate was built on 25 October 2026 with LLVM 23.1.3, msvc-wine 514f8ea3, MSVC 14.44.35207 and SDK
-10.0.26100.0. The build record identifies the compiler, source commit, empty source patch and resulting DLL hash.
+The 11 November build used LLVM 23.1.4, msvc-wine 514f8ea3, MSVC 14.44.35207 and SDK 10.0.26100.0. The build record
+identifies the compiler, source commit, empty source patch and resulting DLL hash. This build was made twice, from
+checkouts in two different folders, with the same result.
+
+Builds before this one depend on the folder of the checkout. clang-cl names the contents of an anonymous namespace
+after a hash of the source file's name, the DLL keeps those names (69 of them here), and the build script gave the
+compiler absolute paths. Such a build reproduces from its own commit only in a checkout at the path it was built in
+(`ba0dedb4` with `e82bb990…` at `/home/daniel/bc250-optiscaler-wp-fork`). Elsewhere the DLL differs in those names (a
+few hundred bytes) and in nothing else. Builds up to `273e8d44` also need the build script of their tag, which named
+a clean checkout differently.
 
 ## Submodules
 
-These are the submodules pinned by upstream `08e13adf`. The October 25 merge updates Vulkan-Headers;
-the other eight pins are unchanged from the preceding FreeFG build. The corresponding source archive records
-the exact commits and trees and includes the redistributable source.
+These are the submodules pinned by upstream `7479cb29`: the same nine commits as in the 30 October build
+(`external/FidelityFX-SDK-v2` has been at v2.4.0 since upstream's change of 28 October). The corresponding source
+archive records the exact commits and trees and includes the redistributable source.
 
 | Path | Repository | Commit |
 | --- | --- | --- |
 | `external/FidelityFX-SDK` | https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK | `c6efa6bf7f2027b3ec94f28578bb5965eabb9e55` |
-| `external/FidelityFX-SDK-v2` | https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK | `60f4ea81909200d8542eca14dccb2628b763a9a3` (v2.3.0) |
+| `external/FidelityFX-SDK-v2` | https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK | `7539ae8b6568ad29ed78a753404351daf3b5cca7` (v2.4.0) |
 | `external/magic_enum` | https://github.com/Neargye/magic_enum | `a733a2ea665ca5d72b7270f0334bf2e7b82bd0cc` |
 | `external/nvapi` | https://github.com/NVIDIA/nvapi | `9b181ea572f680327fe01a14a0f1f41c78034104` |
 | `external/simpleini` | https://github.com/brofield/simpleini | `6048871ea9ee0ec24be5bd099d161a10567d7dc2` |
@@ -266,6 +309,18 @@ the exact commits and trees and includes the redistributable source.
 
 The build reads headers from these submodules and links static libraries that the OptiScaler tree itself carries.
 
+
+## Upstream status (11 November 2026)
+
+Four of the fork's changes are open upstream pull requests: the Streamline plugin lock order
+([#1276](https://github.com/optiscaler/OptiScaler/pull/1276)), the XeFG/XeLL library paths
+([#1277](https://github.com/optiscaler/OptiScaler/pull/1277)), auxiliary DXGI factories
+([#1278](https://github.com/optiscaler/OptiScaler/pull/1278)) and the required launch argument
+([#1280](https://github.com/optiscaler/OptiScaler/pull/1280)). The HLX input contract
+([#1279](https://github.com/optiscaler/OptiScaler/pull/1279)) was closed: upstream keeps provider-specific code out
+and points to its plugin SDK, so that change stays in this fork. Upstream now resolves a zero-size swapchain from
+its window itself (`Util::IsOverlaySwapchain`), which covers the fork's earlier window-size fix except for the
+minimized-window case kept here.
 
 ## Upstream status (25 October 2026)
 
