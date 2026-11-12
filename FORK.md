@@ -285,8 +285,8 @@ checkouts in two different folders, with the same result.
 Builds before this one depend on the folder of the checkout. clang-cl names the contents of an anonymous namespace
 after a hash of the source file's name, the DLL keeps those names (69 of them here), and the build script gave the
 compiler absolute paths. Such a build reproduces from its own commit only in a checkout at the path it was built in
-(`ba0dedb4` with `e82bb990…` at `/home/daniel/bc250-optiscaler-wp-fork`). Elsewhere the DLL differs in those names (a
-few hundred bytes) and in nothing else. Builds up to `273e8d44` also need the build script of their tag, which named
+(`ba0dedb4` with `e82bb990…` is one of them). Elsewhere the DLL differs in those names (a few hundred bytes) and in
+nothing else. Builds up to `273e8d44` also need the build script of their tag, which named
 a clean checkout differently.
 
 ## Submodules
